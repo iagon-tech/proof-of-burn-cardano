@@ -1,3 +1,21 @@
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingStrategies         #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE NoImplicitPrelude          #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE TypeOperators              #-}
+
+{-# OPTIONS_GHC -fno-warn-unused-imports #-}
 module ProofOfBurn where 
 -- | This is a burner contract,
 --
@@ -15,12 +33,13 @@ import           Data.Char                 (ord, chr)
 import           Data.Sequences            (snoc, unsnoc)
 import qualified Data.Map                  as Map
 import qualified Data.List.NonEmpty        as NonEmpty(toList)
-import           Language.Plutus.Contract
-import qualified Language.PlutusTx         as PlutusTx
-import           Language.PlutusTx.Prelude hiding (Applicative (..))
-import           Ledger                    (Address, ValidatorCtx, scriptAddress)
+import           Plutus.Contract
+import qualified PlutusTx         as PlutusTx
+import           PlutusTx.Prelude hiding (Applicative (..))
+import           Ledger                    (Address, scriptAddress)
 import qualified Ledger.Constraints        as Constraints
 import qualified Ledger.Typed.Scripts      as Scripts
+import           Ledger.Typed.Scripts.Validators(ValidatorType)
 import           Ledger.Value              (Value)
 import           Plutus.V1.Ledger.Crypto
 import           Plutus.V1.Ledger.Contexts
@@ -34,59 +53,67 @@ newtype MyDatum = MyDatum { fromMyDatum :: ByteString } deriving newtype PlutusT
 PlutusTx.makeLift ''MyDatum
 
 -- | Redeemer holds no data, since the address is taken from the context.
-data MyRedeemer = MyRedeemer deriving PlutusTx.IsData
+newtype MyRedeemer = MyRedeemer { _nothing :: () } deriving newtype PlutusTx.IsData
 PlutusTx.makeLift ''MyRedeemer
 
 -- | Spending validator checks that hash of the redeeming address is the same as the Utxo datum.
-validateSpend :: MyDatum -> MyRedeemer -> ValidatorCtx -> Bool
-validateSpend (MyDatum addrHash) _myRedeemerValue ValidatorCtx { valCtxTxInfo = TxInfo { txInfoSignatories = [addr] } } =
+validateSpend :: ValidatorType Burner
+validateSpend (MyDatum addrHash) _myRedeemerValue ScriptContext { scriptContextTxInfo = TxInfo { txInfoSignatories = [addr] } } =
    addrHash == sha3_256 (getPubKeyHash addr)
+validateSpend _ _  _ = traceError "Expecting exactly one signatory."
 
 -- | The address of the contract (the hash of its validator script).
 contractAddress :: Address
-contractAddress = Ledger.scriptAddress (Scripts.validatorScript burnerInstance)
+contractAddress = Ledger.scriptAddress (Scripts.validatorScript burnerValidator)
 
 data Burner
-instance Scripts.ScriptType Burner where
-    type instance RedeemerType Burner = MyRedeemer
-    type instance DatumType Burner = MyDatum
+instance Scripts.ValidatorTypes Burner where
+    type instance RedeemerType  Burner = MyRedeemer
+    type instance DatumType     Burner = MyDatum
 
--- | The script instance is the compiled validator (ready to go onto the chain)
+{-
 burnerInstance :: Scripts.ScriptInstance Burner
 burnerInstance = Scripts.validator @Burner
     $$(PlutusTx.compile [|| validateSpend ||])
     $$(PlutusTx.compile [|| wrap ||]) where
         wrap = Scripts.wrapValidator @MyDatum @MyRedeemer
+ -}
+
+-- | The script instance is the compiled validator (ready to go onto the chain)
+burnerValidator :: Scripts.TypedValidator Burner
+burnerValidator = Scripts.mkTypedValidator @Burner
+    $$(PlutusTx.compile [|| validateSpend ||])
+    $$(PlutusTx.compile [|| wrap          ||])
+  where
+    wrap = Scripts.wrapValidator @MyDatum @MyRedeemer
 
 -- | The schema of the contract, with two endpoints.
-type Schema =
-    BlockchainActions
-        .\/ Endpoint "lock"          (PubKeyHash, Value) -- lock the value
-        .\/ Endpoint "burn"          (ByteString, Value) -- burn the value
-        .\/ Endpoint "redeem"        ()                  -- redeem the locked value
+type Schema = Endpoint "lock"   (PubKeyHash, Value) -- lock the value
+          .\/ Endpoint "burn"   (ByteString, Value) -- burn the value
+          .\/ Endpoint "redeem" ()                  -- redeem the locked value
 
-contract :: AsContractError e => Contract Schema e ()
+contract :: AsContractError e => Contract w Schema e ()
 contract = lock `select` burn `select` redeem
 
 -- | The "lock" contract endpoint.
 --
 --   Lock the value to the given addressee.
-lock :: AsContractError e => Contract Schema e ()
+lock :: AsContractError e => Contract w Schema e ()
 lock = do
     (addr, lockedFunds) <- endpoint @"lock"
     let hash = sha3_256 $ getPubKeyHash addr
     let tx = Constraints.mustPayToTheScript (MyDatum hash) lockedFunds
-    void $ submitTxConstraints burnerInstance tx
+    void $ submitTxConstraints burnerValidator tx
 
 -- | The "burn" contract endpoint.
 --
 --   Burn the value with the given commitment.
-burn :: AsContractError e => Contract Schema e ()
+burn :: AsContractError e => Contract w Schema e ()
 burn = do
     (aCommitment, burnedFunds) <- endpoint @"burn"
     let hash = flipCommitment $ sha3_256 $ aCommitment
     let tx = Constraints.mustPayToTheScript (MyDatum hash) burnedFunds
-    void $ submitTxConstraints burnerInstance tx
+    void $ submitTxConstraints burnerValidator tx
 
 -- | Flip lowest bit in the commitment
 --
@@ -101,13 +128,13 @@ flipCommitment bs = do
 -- | The "redeem" contract endpoint.
 --
 --   Can redeem the value, if it was published, not burned.
-redeem :: AsContractError e => Contract Schema e ()
+redeem :: AsContractError e => Contract w Schema e ()
 redeem = do
-    myRedeemerValue <- endpoint @"redeem"
+    endpoint @"redeem"
     unspentOutputs <- utxoAt contractAddress
-    let redeemer = MyRedeemer
+    let redeemer = MyRedeemer ()
         tx       = collectFromScript unspentOutputs redeemer
-    void $ submitTxConstraintsSpending burnerInstance unspentOutputs tx
+    void $ submitTxConstraintsSpending burnerValidator unspentOutputs tx
 
 {-
 -- | The "burned" confirmation endpoint
@@ -127,7 +154,7 @@ burned aCommitment = do
     hash               = flipCommitment $ sha3_256 aCommitment
  -}
 
-endpoints :: AsContractError e => Contract Schema e ()
+endpoints :: AsContractError e => Contract w Schema e ()
 endpoints = contract
 
 mkSchemaDefinitions ''Schema

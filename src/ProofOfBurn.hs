@@ -136,14 +136,15 @@ redeem = do
         tx       = collectFromScript unspentOutputs redeemer
     void $ submitTxConstraintsSpending burnerValidator unspentOutputs tx
 
-{-
+
 -- | The "burned" confirmation endpoint
 --
 --   Confirms that the value was burned with the given commitment.
-burned :: AsContractError e => ByteString -> Contract Schema e Value
+{-
+burned :: AsContractError e => ByteString -> Contract w Schema e Value
 burned aCommitment = do
     unspentOutputs <- utxoAt contractAddress
-    return $ totalValue (withCommitment hash `Map.filter` unspentOutputs)
+    return $ totalValue (withCommitment `Map.filter` unspentOutputs)
     {-let redeemer = MyRedeemer
         tx       = collectFromScript unspentOutputs redeemer
     void $ submitTxConstraintsSpending burnerInstance unspentOutputs tx -}

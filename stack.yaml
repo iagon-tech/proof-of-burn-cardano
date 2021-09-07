@@ -150,6 +150,24 @@ extra-deps:
 - git: https://github.com/input-output-hk/optparse-applicative
   commit: 7497a29cb998721a9068d5725d49461f2bba0e7a
 
+
+# https://github.com/input-output-hk/cardano-wallet/blob/64e26148373d4efd14fcccc32864d4eb80df31ff/stack.yaml#L30
+flags:
+  # Avoid a system library which causes difficulty with cross-compilation
+  zip:
+    disable-bzip2: true
+
+  # Bundle VRF crypto in libsodium and do not rely on an external fork to have it.
+  # This still requires the host system to have the 'standard' libsodium installed.
+  cardano-crypto-praos:
+    external-libsodium-vrf: false
+
+  # Using RDRAND instead of /dev/urandom as an entropy source for key
+  # generation is dubious. Set the flag so we use /dev/urandom by default.
+  cryptonite:
+    support_rdrand: false
+
+
 allow-newer: true
 
 extra-package-dbs: []

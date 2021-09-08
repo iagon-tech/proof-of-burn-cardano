@@ -17,6 +17,7 @@
 {-# LANGUAGE TypeOperators              #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-imports #-}
+{-# OPTIONS_GHC -fno-ignore-interface-pragmas #-}
 
 -- | This is a burner contract,
 --

@@ -174,3 +174,15 @@ extra-package-dbs: []
 
 nix:
   shell-file: shell.nix
+
+#+BEGIN_STACK2CABAL
+# package zip
+#   flags: +disable-bzip2
+#
+# package cardano-crypto-praos
+#   flags: -external-libsodium-vrf
+#
+# package cryptonite
+#   flags: -support_rdrand
+#
+#+END_STACK2CABAL

@@ -17,7 +17,7 @@
 {-# LANGUAGE TypeOperators              #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-imports #-}
-module ProofOfBurn where 
+
 -- | This is a burner contract,
 --
 -- And add function implementations (and rename them to
@@ -27,6 +27,7 @@ module ProofOfBurn where
 --   * burn - which burns the value instead of locking it.
 --
 --  In order to check that value was indeed burned, one needs to run a `burned` script with the same commitment value.
+module ProofOfBurn where 
 
 import           Control.Monad             (void)
 import           Data.Bits                 (xor)
@@ -36,7 +37,9 @@ import qualified Data.Map                  as Map
 import qualified Data.List.NonEmpty        as NonEmpty(toList)
 import           Plutus.Contract
 import qualified PlutusTx         as PlutusTx
+import qualified PlutusTx.IsData  as PlutusTx
 import           PlutusTx.Prelude hiding (Applicative (..))
+import           PlutusTx.Builtins.Internal (BuiltinByteString(..))
 import           Ledger                    (Address, Datum(..), scriptAddress)
 import qualified Ledger.Constraints        as Constraints
 import qualified Ledger.Typed.Scripts      as Scripts
@@ -50,12 +53,14 @@ import           Playground.Contract
 -- | Utxo datum holds either:
 --     * the hash of the address that can redeem the value, if it was locked;
 --     * the hash with the last bit flipped, if it was burned.
-newtype MyDatum = MyDatum { fromMyDatum :: ByteString } deriving newtype PlutusTx.IsData
+newtype MyDatum = MyDatum { fromMyDatum :: BuiltinByteString }
 PlutusTx.makeLift ''MyDatum
+PlutusTx.unstableMakeIsData ''MyDatum
 
 -- | Redeemer holds no data, since the address is taken from the context.
-newtype MyRedeemer = MyRedeemer { _nothing :: () } deriving newtype PlutusTx.IsData
+newtype MyRedeemer = MyRedeemer { _nothing :: () }
 PlutusTx.makeLift ''MyRedeemer
+PlutusTx.unstableMakeIsData ''MyRedeemer
 
 -- | Spending validator checks that hash of the redeeming address is the same as the Utxo datum.
 validateSpend :: ValidatorType Burner
@@ -70,8 +75,8 @@ contractAddress = Ledger.scriptAddress (Scripts.validatorScript burnerValidator)
 -- | Type level tag for the Burner script.
 data Burner
 instance Scripts.ValidatorTypes Burner where
-    type instance RedeemerType  Burner = MyRedeemer -- ^ Argument given to redeem value, if possible (empty)
-    type instance DatumType     Burner = MyDatum    -- ^ Validator script argument
+    type instance RedeemerType  Burner = MyRedeemer -- Argument given to redeem value, if possible (empty)
+    type instance DatumType     Burner = MyDatum    -- Validator script argument
 
 -- | The script instance is the compiled validator (ready to go onto the chain)
 burnerValidator :: Scripts.TypedValidator Burner
@@ -82,19 +87,19 @@ burnerValidator = Scripts.mkTypedValidator @Burner
     wrap = Scripts.wrapValidator @MyDatum @MyRedeemer
 
 -- | The schema of the contract, with two endpoints.
-type Schema = Endpoint "lock"   (PubKeyHash, Value) -- lock the value
-          .\/ Endpoint "burn"   (ByteString, Value) -- burn the value
-          .\/ Endpoint "redeem" ()                  -- redeem the locked value
+type Schema = Endpoint "lock"   (PubKeyHash, Value)        -- lock the value
+          .\/ Endpoint "burn"   (BuiltinByteString, Value) -- burn the value
+          .\/ Endpoint "redeem" ()                         -- redeem the locked value
 
 contract :: AsContractError e => Contract w Schema e ()
-contract = lock `select` burn `select` redeem
+contract = selectList [lock, burn, redeem]
+
 
 -- | The "lock" contract endpoint.
 --
 --   Lock the value to the given addressee.
-lock :: AsContractError e => Contract w Schema e ()
-lock = do
-    (addr, lockedFunds) <- endpoint @"lock"
+lock :: AsContractError e => Promise w Schema e ()
+lock = endpoint @"lock" $ \(addr, lockedFunds) -> do
     let hash = sha3_256 $ getPubKeyHash addr
     let tx = Constraints.mustPayToTheScript (MyDatum hash) lockedFunds
     void $ submitTxConstraints burnerValidator tx
@@ -102,9 +107,8 @@ lock = do
 -- | The "burn" contract endpoint.
 --
 --   Burn the value with the given commitment.
-burn :: AsContractError e => Contract w Schema e ()
-burn = do
-    (aCommitment, burnedFunds) <- endpoint @"burn"
+burn :: AsContractError e => Promise w Schema e ()
+burn = endpoint @"burn" $ \(aCommitment, burnedFunds) -> do
     let hash = flipCommitment $ sha3_256 $ aCommitment
     let tx = Constraints.mustPayToTheScript (MyDatum hash) burnedFunds
     void $ submitTxConstraints burnerValidator tx
@@ -112,8 +116,8 @@ burn = do
 -- | Flip lowest bit in the commitment
 --
 --   Requires non-empty bytestring as argument
-flipCommitment :: ByteString -> ByteString
-flipCommitment bs = do
+flipCommitment :: BuiltinByteString -> BuiltinByteString
+flipCommitment (BuiltinByteString bs) = BuiltinByteString $ do
   case unsnoc bs of
     Nothing             -> traceError "Hash was empty" -- input was empty
     Just (seq, lastElt) -> snoc seq
@@ -122,9 +126,8 @@ flipCommitment bs = do
 -- | The "redeem" contract endpoint.
 --
 --   Can redeem the value, if it was published, not burned.
-redeem :: AsContractError e => Contract w Schema e ()
-redeem = do
-    endpoint @"redeem"
+redeem :: AsContractError e => Promise w Schema e ()
+redeem = endpoint @"redeem" $ \() -> do
     unspentOutputs <- utxoAt contractAddress
     let redeemer = MyRedeemer ()
         tx       = collectFromScript unspentOutputs redeemer
@@ -135,7 +138,7 @@ redeem = do
 --
 --   Confirms that the value was burned with the given commitment.
 --   It returns total value locked with a given commitment.
-burned :: AsContractError e => ByteString -> Contract w Schema e Value
+burned :: AsContractError e => BuiltinByteString -> Contract w Schema e Value
 burned aCommitment = do
     unspentOutputs :: UtxoMap <- utxoAt contractAddress
     return $ totalValue (withCommitment `Map.filter` unspentOutputs)
@@ -150,11 +153,11 @@ burned aCommitment = do
                            } = burnHash == Just commitmentHash
       where
         -- | Extract hash from the Utxo.
-        burnHash  :: Maybe ByteString
+        burnHash  :: Maybe BuiltinByteString
         burnHash   = do
           dh            <- txOutDatumHash
-          Datum d       <- dh `Map.lookup` txData -- lookup Datum from the hash
-          MyDatum aHash <- PlutusTx.fromData d -- Unpack from PlutusTx.Datum type.
+          Datum d       <- dh `Map.lookup` txData     -- lookup Datum from the hash
+          MyDatum aHash <- PlutusTx.fromBuiltinData d -- Unpack from PlutusTx.Datum type.
           return           aHash
     commitmentHash = flipCommitment $ sha3_256 aCommitment
 

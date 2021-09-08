@@ -37,7 +37,7 @@ import           Data.Sequences            (snoc, unsnoc)
 import qualified Data.Map                  as Map
 import qualified Data.List.NonEmpty        as NonEmpty(toList)
 import           Plutus.Contract
-import qualified PlutusTx         as PlutusTx
+import qualified PlutusTx
 import qualified PlutusTx.IsData  as PlutusTx
 import           PlutusTx.Prelude hiding (Applicative (..))
 import           PlutusTx.Builtins.Internal (BuiltinByteString(..))
@@ -110,7 +110,7 @@ lock = endpoint @"lock" $ \(addr, lockedFunds) -> do
 --   Burn the value with the given commitment.
 burn :: AsContractError e => Promise w Schema e ()
 burn = endpoint @"burn" $ \(aCommitment, burnedFunds) -> do
-    let hash = flipCommitment $ sha3_256 $ aCommitment
+    let hash = flipCommitment $ sha3_256 aCommitment
     let tx = Constraints.mustPayToTheScript (MyDatum hash) burnedFunds
     void $ submitTxConstraints burnerValidator tx
 

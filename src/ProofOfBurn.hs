@@ -30,7 +30,7 @@
 --  In order to check that value was indeed burned, one needs to run a `burned` script with the same commitment value.
 module ProofOfBurn where 
 
-import           Control.Monad             (void)
+import           Control.Monad             (void, when)
 import           Data.Bits                 (xor)
 import           Data.Char                 (ord, chr)
 import           Data.Sequences            (snoc, unsnoc)
@@ -53,6 +53,7 @@ import           Playground.Contract
 import qualified Data.Text                as T
 import Wallet.Emulator.Wallet
 import Ledger.Crypto
+import qualified Prelude
 
 -- | Utxo datum holds either:
 --     * the hash of the address that can redeem the value, if it was locked;
@@ -94,13 +95,11 @@ burnerValidator = Scripts.mkTypedValidator @Burner
 -- | The schema of the contract, with two endpoints.
 type Schema = Endpoint "lock"   (PubKeyHash, Value)        -- lock the value
           .\/ Endpoint "burn"   (BuiltinByteString, Value) -- burn the value
+          .\/ Endpoint "burnedTrace"   (BuiltinByteString, Value) -- burn the value
           .\/ Endpoint "redeem" ()                         -- redeem the locked value
-          .\/ Endpoint "lockNum"   (Integer, Value)        -- lock the value (for simulator)
-          .\/ Endpoint "burnNum"   (Integer, Value) -- burn the value (for simulator)
 
 contract :: AsContractError e => Contract w Schema e ()
-contract = selectList [lock, lockNum, burn, burnNum, redeem]
-
+contract = selectList [hello, lock, burn, burnedTrace, redeem]
 
 -- | The "lock" contract endpoint.
 --
@@ -114,9 +113,6 @@ lock' (addr, lockedFunds) = do
     let tx = Constraints.mustPayToTheScript (MyDatum hash) lockedFunds
     void $ submitTxConstraints burnerValidator tx
 
-lockNum :: AsContractError e => Promise w Schema e ()
-lockNum = endpoint @"lockNum" $ \(num, lockedFunds) -> lock' (pubKeyHash (walletPubKey (Wallet num)), lockedFunds)
-
 -- | The "burn" contract endpoint.
 --
 --   Burn the value with the given commitment.
@@ -128,9 +124,6 @@ burn' (aCommitment, burnedFunds) = do
     let hash = flipCommitment $ sha3_256 aCommitment
     let tx = Constraints.mustPayToTheScript (MyDatum hash) burnedFunds
     void $ submitTxConstraints burnerValidator tx
-
-burnNum :: AsContractError e => Promise w Schema e ()
-burnNum = endpoint @"burnNum" $ \(num, lockedFunds) -> burn' (getPubKeyHash (pubKeyHash (walletPubKey (Wallet num))), lockedFunds)
 
 -- | Flip lowest bit in the commitment
 --
@@ -152,6 +145,13 @@ redeem = endpoint @"redeem" $ \() -> do
         tx       = collectFromScript unspentOutputs redeemer
     void $ submitTxConstraintsSpending burnerValidator unspentOutputs tx
 
+
+burnedTrace :: AsContractError e => Promise w Schema e ()
+burnedTrace = endpoint @"burnedTrace" $ \(aCommitment, expectedValue) -> do
+  actualVal <- burned aCommitment
+  if (actualVal /= expectedValue)
+  then logInfo @Prelude.String "Unexpected burned value!"
+  else logInfo @Prelude.String "Expected burned value"
 
 -- | The "burned" confirmation endpoint.
 --

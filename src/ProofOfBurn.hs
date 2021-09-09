@@ -163,7 +163,7 @@ burned aCommitment = do
     commitmentHash = flipCommitment $ sha3_256 aCommitment
 
 -- | Script endpoints available for calling the contract.
-endpoints :: AsContractError e => Contract w Schema e ()
+endpoints :: Contract () Schema T.Text ()
 endpoints = contract
 
 mkSchemaDefinitions ''Schema

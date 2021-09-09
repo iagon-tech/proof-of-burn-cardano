@@ -99,7 +99,7 @@ type Schema = Endpoint "lock"   (PubKeyHash, Value)        -- lock the value
           .\/ Endpoint "redeem" ()                         -- redeem the locked value
 
 contract :: AsContractError e => Contract w Schema e ()
-contract = selectList [hello, lock, burn, burnedTrace, redeem]
+contract = selectList [lock, burn, burnedTrace, redeem]
 
 -- | The "lock" contract endpoint.
 --

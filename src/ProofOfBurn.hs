@@ -50,6 +50,9 @@ import           Plutus.V1.Ledger.Crypto
 import           Plutus.V1.Ledger.Contexts
 import           Plutus.V1.Ledger.Tx (Tx(..), TxOutRef, TxOutTx(..), txData, txOutDatum)
 import           Playground.Contract
+import qualified Data.Text                as T
+import Wallet.Emulator.Wallet
+import Ledger.Crypto
 
 -- | Utxo datum holds either:
 --     * the hash of the address that can redeem the value, if it was locked;
@@ -63,6 +66,7 @@ newtype MyRedeemer = MyRedeemer { _nothing :: () }
 PlutusTx.makeLift ''MyRedeemer
 PlutusTx.unstableMakeIsData ''MyRedeemer
 
+{-# INLINABLE validateSpend #-}
 -- | Spending validator checks that hash of the redeeming address is the same as the Utxo datum.
 validateSpend :: ValidatorType Burner
 validateSpend (MyDatum addrHash) _myRedeemerValue ScriptContext { scriptContextTxInfo = TxInfo { txInfoSignatories = [addr] } } =
@@ -91,28 +95,42 @@ burnerValidator = Scripts.mkTypedValidator @Burner
 type Schema = Endpoint "lock"   (PubKeyHash, Value)        -- lock the value
           .\/ Endpoint "burn"   (BuiltinByteString, Value) -- burn the value
           .\/ Endpoint "redeem" ()                         -- redeem the locked value
+          .\/ Endpoint "lockNum"   (Integer, Value)        -- lock the value (for simulator)
+          .\/ Endpoint "burnNum"   (Integer, Value) -- burn the value (for simulator)
 
 contract :: AsContractError e => Contract w Schema e ()
-contract = selectList [lock, burn, redeem]
+contract = selectList [lock, lockNum, burn, burnNum, redeem]
 
 
 -- | The "lock" contract endpoint.
 --
 --   Lock the value to the given addressee.
 lock :: AsContractError e => Promise w Schema e ()
-lock = endpoint @"lock" $ \(addr, lockedFunds) -> do
+lock = endpoint @"lock" lock'
+
+lock' :: AsContractError e => (PubKeyHash, Value) -> Contract w Schema e ()
+lock' (addr, lockedFunds) = do
     let hash = sha3_256 $ getPubKeyHash addr
     let tx = Constraints.mustPayToTheScript (MyDatum hash) lockedFunds
     void $ submitTxConstraints burnerValidator tx
+
+lockNum :: AsContractError e => Promise w Schema e ()
+lockNum = endpoint @"lockNum" $ \(num, lockedFunds) -> lock' (pubKeyHash (walletPubKey (Wallet num)), lockedFunds)
 
 -- | The "burn" contract endpoint.
 --
 --   Burn the value with the given commitment.
 burn :: AsContractError e => Promise w Schema e ()
-burn = endpoint @"burn" $ \(aCommitment, burnedFunds) -> do
+burn = endpoint @"burn" burn'
+
+burn' :: AsContractError e => (BuiltinByteString, Value) -> Contract w Schema e ()
+burn' (aCommitment, burnedFunds) = do
     let hash = flipCommitment $ sha3_256 aCommitment
     let tx = Constraints.mustPayToTheScript (MyDatum hash) burnedFunds
     void $ submitTxConstraints burnerValidator tx
+
+burnNum :: AsContractError e => Promise w Schema e ()
+burnNum = endpoint @"burnNum" $ \(num, lockedFunds) -> burn' (getPubKeyHash (pubKeyHash (walletPubKey (Wallet num))), lockedFunds)
 
 -- | Flip lowest bit in the commitment
 --

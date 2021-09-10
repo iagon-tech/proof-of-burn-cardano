@@ -15,6 +15,7 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
+{-# LANGUAGE MultiWayIf                 #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-imports #-}
 {-# OPTIONS_GHC -fno-ignore-interface-pragmas #-}
@@ -45,7 +46,7 @@ import           Ledger                    (Address, Datum(..), scriptAddress)
 import qualified Ledger.Constraints        as Constraints
 import qualified Ledger.Typed.Scripts      as Scripts
 import           Ledger.Typed.Scripts.Validators(ValidatorType)
-import           Ledger.Value              (Value)
+import           Ledger.Value              (Value, isZero, valueOf)
 import           Plutus.V1.Ledger.Crypto
 import           Plutus.V1.Ledger.Contexts
 import           Plutus.V1.Ledger.Tx (Tx(..), TxOutRef, TxOutTx(..), txData, txOutDatum)
@@ -95,7 +96,7 @@ burnerValidator = Scripts.mkTypedValidator @Burner
 -- | The schema of the contract, with two endpoints.
 type Schema = Endpoint "lock"   (PubKeyHash, Value)        -- lock the value
           .\/ Endpoint "burn"   (BuiltinByteString, Value) -- burn the value
-          .\/ Endpoint "burnedTrace"   (BuiltinByteString, Value) -- burn the value
+          .\/ Endpoint "burnedTrace"   BuiltinByteString   -- burn the value
           .\/ Endpoint "redeem" ()                         -- redeem the locked value
 
 contract :: AsContractError e => Contract w Schema e ()
@@ -147,11 +148,10 @@ redeem = endpoint @"redeem" $ \() -> do
 
 
 burnedTrace :: AsContractError e => Promise w Schema e ()
-burnedTrace = endpoint @"burnedTrace" $ \(aCommitment, expectedValue) -> do
-  actualVal <- burned aCommitment
-  if (actualVal /= expectedValue)
-  then logInfo @Prelude.String "Unexpected burned value!"
-  else logInfo @Prelude.String "Expected burned value"
+burnedTrace = endpoint @"burnedTrace" $ \aCommitment -> do
+  burnedVal <- burned aCommitment
+  if | isZero burnedVal -> logInfo @Prelude.String "Nothing burned with given commitment"
+     | otherwise        -> logInfo @Prelude.String ("Value burned with given commitment: "  <> Prelude.show (valueOf burnedVal "" ""))
 
 -- | The "burned" confirmation endpoint.
 --

@@ -50,11 +50,16 @@ import           Ledger.Value              (Value, isZero, valueOf)
 import           Plutus.V1.Ledger.Crypto
 import           Plutus.V1.Ledger.Contexts
 import           Plutus.V1.Ledger.Tx (Tx(..), TxOutRef, TxOutTx(..), txData, txOutDatum)
+import qualified Plutus.V1.Ledger.Scripts as Plutus
 import           Playground.Contract
 import qualified Data.Text                as T
 import Wallet.Emulator.Wallet
 import Ledger.Crypto
 import qualified Prelude
+import qualified Data.ByteString.Short as SBS
+import qualified Data.ByteString.Lazy  as LBS
+import           Codec.Serialise
+import           Cardano.Api.Shelley (PlutusScript (..), PlutusScriptV1)
 
 -- | Utxo datum holds either:
 --     * the hash of the address that can redeem the value, if it was locked;
@@ -77,7 +82,7 @@ validateSpend _ _  _ = traceError "Expecting exactly one signatory."
 
 -- | The address of the contract (the hash of its validator script).
 contractAddress :: Address
-contractAddress = Ledger.scriptAddress (Scripts.validatorScript burnerValidator)
+contractAddress = Ledger.scriptAddress (Scripts.validatorScript burnerTypedValidator)
 
 -- | Type level tag for the Burner script.
 data Burner
@@ -86,8 +91,8 @@ instance Scripts.ValidatorTypes Burner where
     type instance DatumType     Burner = MyDatum    -- Validator script argument
 
 -- | The script instance is the compiled validator (ready to go onto the chain)
-burnerValidator :: Scripts.TypedValidator Burner
-burnerValidator = Scripts.mkTypedValidator @Burner
+burnerTypedValidator :: Scripts.TypedValidator Burner
+burnerTypedValidator = Scripts.mkTypedValidator @Burner
     $$(PlutusTx.compile [|| validateSpend ||])
     $$(PlutusTx.compile [|| wrap          ||])
   where
@@ -98,6 +103,18 @@ type Schema = Endpoint "lock"   (PubKeyHash, Value)        -- lock the value
           .\/ Endpoint "burn"   (BuiltinByteString, Value) -- burn the value
           .\/ Endpoint "burnedTrace"   BuiltinByteString   -- burn the value
           .\/ Endpoint "redeem" ()                         -- redeem the locked value
+
+burnerScript :: Plutus.Script
+burnerScript = Plutus.unValidatorScript burnerValidator
+
+burnerValidator :: Plutus.Validator
+burnerValidator = Scripts.validatorScript burnerTypedValidator
+
+burnerSBS :: SBS.ShortByteString
+burnerSBS = SBS.toShort . LBS.toStrict $ serialise burnerScript
+
+burnerSerialised :: PlutusScript PlutusScriptV1
+burnerSerialised = PlutusScriptSerialised burnerSBS
 
 contract :: AsContractError e => Contract w Schema e ()
 contract = selectList [lock, burn, burnedTrace, redeem]
@@ -112,7 +129,7 @@ lock' :: AsContractError e => (PubKeyHash, Value) -> Contract w Schema e ()
 lock' (addr, lockedFunds) = do
     let hash = sha3_256 $ getPubKeyHash addr
     let tx = Constraints.mustPayToTheScript (MyDatum hash) lockedFunds
-    void $ submitTxConstraints burnerValidator tx
+    void $ submitTxConstraints burnerTypedValidator tx
 
 -- | The "burn" contract endpoint.
 --
@@ -124,7 +141,7 @@ burn' :: AsContractError e => (BuiltinByteString, Value) -> Contract w Schema e 
 burn' (aCommitment, burnedFunds) = do
     let hash = flipCommitment $ sha3_256 aCommitment
     let tx = Constraints.mustPayToTheScript (MyDatum hash) burnedFunds
-    void $ submitTxConstraints burnerValidator tx
+    void $ submitTxConstraints burnerTypedValidator tx
 
 -- | Flip lowest bit in the commitment
 --
@@ -144,7 +161,7 @@ redeem = endpoint @"redeem" $ \() -> do
     unspentOutputs <- utxoAt contractAddress
     let redeemer = MyRedeemer ()
         tx       = collectFromScript unspentOutputs redeemer
-    void $ submitTxConstraintsSpending burnerValidator unspentOutputs tx
+    void $ submitTxConstraintsSpending burnerTypedValidator unspentOutputs tx
 
 
 burnedTrace :: AsContractError e => Promise w Schema e ()

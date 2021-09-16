@@ -51,9 +51,9 @@ extra-deps:
 - dom-lt-0.2.2.1@sha256:6b005b64f10a0f73f716898e0f4b4d93a02c31dc8abb155c14afd870e3abf9ac,1778
 - libsystemd-journal-1.4.5@sha256:dc68296f5d874b48ba187dbd0af4de8182ba57cb6ebaa46c05ac61c1b3c6c396,1238
 
-# https://github.com/input-output-hk/plutus/releases/tag/plutus-starter-devcontainer%2Fv1.0.8
+# https://github.com/input-output-hk/plutus/releases/tag/plutus-starter-devcontainer%2Fv1.0.9
 - git: https://github.com/input-output-hk/plutus.git
-  commit: cc7bc06c4344cee6cd59bc170063fd627da25ed3
+  commit: plutus-starter-devcontainer/v1.0.9
   subdirs:
       - freer-extras
       - playground-common
@@ -76,7 +76,7 @@ extra-deps:
 - git: https://github.com/input-output-hk/cardano-crypto.git
   commit: 07397f0e50da97eaa0575d93bee7ac4b2b2576ec
 - git: https://github.com/input-output-hk/cardano-base
-  commit: cb0f19c85e5bb5299839ad4ed66af6fa61322cc4
+  commit: 46502694f6a9f0498f822068008b232b3837a9e9
   subdirs:
     - base-deriving-via
     - binary
@@ -94,7 +94,7 @@ extra-deps:
     - cardano-prelude
     - cardano-prelude-test
 - git: https://github.com/input-output-hk/ouroboros-network
-  commit: 877ce057ff6fb086474c8eaad53f2b7f0e0fce6b
+  commit: 6d00ff77f9bcd769fb6d7fd02216cec4e837bfcf
   subdirs:
     - monoidal-synchronisation
     - typed-protocols
@@ -110,7 +110,7 @@ extra-deps:
     - io-classes
     - network-mux
 - git: https://github.com/input-output-hk/iohk-monitoring-framework
-  commit: 808724ff8a19a33d0ed06f9ef59fbd900b08553c
+  commit: 46f994e216a1f8b36fe4669b47b2a7011b0e153c
   subdirs:
     - iohk-monitoring
     - tracer-transformers
@@ -121,7 +121,7 @@ extra-deps:
     - plugins/backend-trace-forwarder
     - plugins/scribe-systemd
 - git: https://github.com/input-output-hk/cardano-ledger-specs
-  commit: d5b184a820853c7ba202efd615b8fadca1acb52c
+  commit: 8efcfc755faae4db3a64ad45343235fce3ed5c47
   subdirs:
     - byron/chain/executable-spec
     - byron/crypto
@@ -138,7 +138,7 @@ extra-deps:
     - cardano-ledger-core
     - alonzo/impl
 - git: https://github.com/input-output-hk/cardano-node.git
-  commit: ed11e8b6429d4af1cb2539460e5cb2283a06b2dc
+  commit: 8cf2b208c7708bd890c7e74d5b1d7c4167a3b40b
   subdirs:
     - cardano-api
     - cardano-node

@@ -32,10 +32,12 @@
 module ProofOfBurn where 
 
 import           Control.Monad             (void, when)
+import           Control.Lens              hiding (snoc, unsnoc)
 import           Data.Bits                 (xor)
 import           Data.Char                 (ord, chr)
 import           Data.Sequences            (snoc, unsnoc)
-import qualified Data.Map                  as Map
+import           Data.Maybe                (fromJust, catMaybes)
+import qualified Data.Map.Strict           as Map
 import qualified Data.List.NonEmpty        as NonEmpty(toList)
 import           Plutus.Contract
 import qualified PlutusTx
@@ -43,10 +45,12 @@ import qualified PlutusTx.IsData  as PlutusTx
 import           PlutusTx.Prelude hiding (Applicative (..))
 import           PlutusTx.Builtins.Internal (BuiltinByteString(..))
 import           Ledger                    (Address, Datum(..), scriptAddress)
+import           Ledger.AddressMap         (UtxoMap)
 import qualified Ledger.Constraints        as Constraints
 import qualified Ledger.Typed.Scripts      as Scripts
 import           Ledger.Typed.Scripts.Validators(ValidatorType)
 import           Ledger.Value              (Value, isZero, valueOf)
+import           Ledger.Tx
 import           Plutus.V1.Ledger.Crypto
 import           Plutus.V1.Ledger.Contexts
 import           Plutus.V1.Ledger.Tx (Tx(..), TxOutRef, TxOutTx(..), txData, txOutDatum)
@@ -60,6 +64,7 @@ import qualified Data.ByteString.Short as SBS
 import qualified Data.ByteString.Lazy  as LBS
 import           Codec.Serialise
 import           Cardano.Api.Shelley (PlutusScript (..), PlutusScriptV1)
+import           Plutus.ChainIndex.Tx
 
 -- | Utxo datum holds either:
 --     * the hash of the address that can redeem the value, if it was locked;
@@ -158,7 +163,7 @@ flipCommitment (BuiltinByteString bs) = BuiltinByteString $ do
 --   Can redeem the value, if it was published, not burned.
 redeem :: AsContractError e => Promise w Schema e ()
 redeem = endpoint @"redeem" $ \() -> do
-    unspentOutputs <- utxoAt contractAddress
+    unspentOutputs <- utxosAt contractAddress
     let redeemer = MyRedeemer ()
         tx       = collectFromScript unspentOutputs redeemer
     void $ submitTxConstraintsSpending burnerTypedValidator unspentOutputs tx
@@ -176,26 +181,27 @@ burnedTrace = endpoint @"burnedTrace" $ \aCommitment -> do
 --   It returns total value locked with a given commitment.
 burned :: AsContractError e => BuiltinByteString -> Contract w Schema e Value
 burned aCommitment = do
-    unspentOutputs :: UtxoMap <- utxoAt contractAddress
+    unspentOutputs :: Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx) <- utxosTxOutTxAt contractAddress
     return $ totalValue (withCommitment `Map.filter` unspentOutputs)
   where
     -- | Total value of Utxos in a `UtxoMap`.
-    totalValue        :: UtxoMap -> Value
-    totalValue         = mconcat . fmap (txOutValue . txOutTxOut . snd) . Map.toList
+    totalValue        :: Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx) -> Value
+    totalValue         = foldOf (folded . _1 . _ScriptChainIndexTxOut . _4)
     -- | Check if the given transaction output is commited to burn with the same hash as `aCommitment`.
-    withCommitment    :: TxOutTx -> Bool
-    withCommitment TxOutTx { txOutTxTx  = Tx    { txData         } -- Mapping of transaction DatumHashes to Datum.
-                           , txOutTxOut = TxOut { txOutDatumHash } -- DatumHash for the given transaction output.
-                           } = burnHash == Just commitmentHash
+    withCommitment    :: (ChainIndexTxOut, ChainIndexTx) -> Bool
+    withCommitment (PublicKeyChainIndexTxOut {}, _) = False
+    withCommitment (ScriptChainIndexTxOut { _ciTxOutDatum = txOutDatumHash }, ChainIndexTx{ _citxData = txData })
+      = burnHash == Just commitmentHash
       where
         -- | Extract hash from the Utxo.
         burnHash  :: Maybe BuiltinByteString
         burnHash   = do
-          dh            <- txOutDatumHash
+          dh            <- either Just (const Nothing) txOutDatumHash
           Datum d       <- dh `Map.lookup` txData     -- lookup Datum from the hash
           MyDatum aHash <- PlutusTx.fromBuiltinData d -- Unpack from PlutusTx.Datum type.
           return           aHash
     commitmentHash = flipCommitment $ sha3_256 aCommitment
+
 
 -- | Script endpoints available for calling the contract.
 endpoints :: Contract () Schema T.Text ()

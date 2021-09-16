@@ -14,8 +14,11 @@ library
                      , bytestring
                      , containers
                      , cardano-api
+                     , lens
                      , playground-common
+                     , plutus-core
                      , plutus-contract
+                     , plutus-chain-index
                      , plutus-ledger
                      , plutus-tx-plugin
                      , plutus-tx

@@ -64,18 +64,19 @@ test-suite plutus-burner-tests
   default-language: Haskell2010
   ghc-options:         -Wall -fobject-code -fno-ignore-interface-pragmas -fno-omit-interface-pragmas
   build-depends:       base ^>=4.14.1.0
+                     , QuickCheck
+                     , aeson
                      , containers
                      , data-default
                      , freer-extras
                      , lens
                      , plutus-contract
                      , plutus-ledger
-                     , proof-of-burn
                      , plutus-tx
-                     , QuickCheck
+                     , proof-of-burn
                      , tasty
-                     , tasty-quickcheck
                      , tasty-hunit
+                     , tasty-quickcheck
                      , text
   if !(impl(ghcjs) || os(ghcjs))
     build-depends: plutus-tx-plugin -any

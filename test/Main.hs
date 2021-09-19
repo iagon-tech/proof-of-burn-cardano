@@ -70,10 +70,17 @@ testsSimple = testGroup "simple"
     ]
     where
 
-
+contract' :: Contract (Value) Schema Text ()
+contract' = ProofOfBurn.contract
 
 myTrace :: EmulatorTrace ()
 myTrace = do
-    pob1 <- activateContractWallet w1 ProofOfBurn.contract
-    callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, 50_000_000)
+    pob1 <- activateContractWallet w1 contract'
+    void $ Emulator.waitNSlots 2
+    callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 50_000_000)
+    void $ Emulator.waitNSlots 2
+    pob2 <- activateContractWallet w2 contract'
+    void $ Emulator.waitNSlots 2
+    callEndpoint @"redeem" pob2 ()
+    void $ Emulator.waitNSlots 2
     return ()

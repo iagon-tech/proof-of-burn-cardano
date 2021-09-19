@@ -6,6 +6,17 @@ Maintainer:          mjgajda@migamake.com
 Build-Type:          Simple
 Copyright:           © 2021 Iagon
 
+common common-extensions
+  default-extensions:
+    DataKinds
+    NoImplicitPrelude
+    NumericUnderscores
+    OverloadedStrings
+    ScopedTypeVariables
+    TypeApplications
+    TypeFamilies
+    TypeOperators
+
 library
   hs-source-dirs:      src
   exposed-modules:     ProofOfBurn
@@ -42,6 +53,7 @@ library
 --                      , bytestring
 
 test-suite plutus-burner-tests
+  import: common-extensions
   type: exitcode-stdio-1.0
   main-is: Main.hs
   hs-source-dirs: test

@@ -1,51 +1,33 @@
 {-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE DeriveAnyClass        #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NoImplicitPrelude     #-}
-{-# LANGUAGE NumericUnderscores    #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
-{-# LANGUAGE TemplateHaskell       #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE BlockArguments        #-}
 
 module Main where
 
+import           Control.Lens
 import           Control.Monad              hiding (fmap)
-import           Control.Monad.Freer.Extras as Extras
+import           Control.Monad.Freer.Extras.Log as Log
 import           Data.Default               (Default (..))
 import qualified Data.Map                   as Map
-import           Data.Monoid                (Last (..))
+-- import           Data.Monoid                (Last (..))
 import           Data.Text                  (Text)
 import           Ledger
-import           Ledger.Value               as Value
 import           Ledger.Ada                 as Ada
 import           Plutus.Contract            as Contract
 import           Plutus.Trace.Emulator      as Emulator
-import           PlutusTx.Prelude           hiding (Semigroup(..), unless)
-import           Prelude                    (IO, Semigroup(..), Show (..), putStrLn)
+import           PlutusTx.Prelude           hiding (Semigroup(..), check)
+import           Prelude                    (IO) -- , Semigroup(..), Show (..), putStrLn)
 import           Plutus.Contract.Trace      as Emulator
 import           Plutus.Contract.Test
--- import           Wallet.Emulator.Wallet
-import           Test.Tasty
-import           Test.Tasty.HUnit
 
---import           Week06.Oracle.Core
---import           Week06.Oracle.Funds
---import           Week06.Oracle.Swap
+import           Test.Tasty
+-- import           Test.Tasty.HUnit
+
 import           ProofOfBurn
 
-assetSymbol :: CurrencySymbol
-assetSymbol = "ff"
-
-assetToken :: TokenName
-assetToken = "USDT"
 
 main :: IO ()
 main = defaultMain tests
+
 
 tests :: TestTree
 tests = testGroup "proof-of-burn tests"
@@ -53,34 +35,63 @@ tests = testGroup "proof-of-burn tests"
     ]
 
 
-
-emCfg :: Emulator.EmulatorConfig
--- emCfg = Emulator.EmulatorConfig (Left (Map.fromList [(knownWallet i, v) | i <- [1..3]])) def def
-emCfg = Emulator.EmulatorConfig (Left $ Map.fromList [(w1, v), (w2, v), (w3, v)]) def def
-  where
-        v :: Value
-        v = Ada.lovelaceValueOf 100_000_000
+-- TODO which parameter is needed
+--      here? ----------+
+--                      |
+--                      v
+contract' :: Contract Value ProofOfBurn.Schema Text ()
+contract' = ProofOfBurn.contract
 
 
 testsSimple :: TestTree
 testsSimple = testGroup "simple"
-    [ testCase "first" $ do
-        -- putStrLn "TEST"
-        runEmulatorTraceIO' def emCfg myTrace
+    [ check "lock"
+        (     walletFundsChange w1 (Ada.lovelaceValueOf (-50_000_000))
+         .&&. walletFundsChange w2 (Ada.lovelaceValueOf 0)
+         .&&. walletFundsChange w3 (Ada.lovelaceValueOf 0)
+        )
+        do
+            pob1 <- activateContractWallet w1 contract'
+            void $ Emulator.waitNSlots 2
+            callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 50_000_000)
+            void $ Emulator.waitNSlots 2
+    -- TODO It seems that `redeem` must filed (or output some warning message).
+    --      So implement it and check then
+    -- [ testCase "first" $ runEmulatorTraceIO' def defaultEmCfg
+    , check "redeem"
+        (     walletFundsChange w1 (Ada.lovelaceValueOf 0)
+         .&&. walletFundsChange w2 (Ada.lovelaceValueOf 0)
+         .&&. walletFundsChange w3 (Ada.lovelaceValueOf 0)
+        )
+            do
+                pob2 <- activateContractWallet w2 contract'
+                void $ Emulator.waitNSlots 2
+                callEndpoint @"redeem" pob2 ()
+                void $ Emulator.waitNSlots 2
+    , check "lock and redeem 1"
+        (     walletFundsChange w1 (Ada.lovelaceValueOf (-50_000_000))
+         .&&. walletFundsChange w2 (Ada.lovelaceValueOf ( 50_000_000))
+         .&&. walletFundsChange w3 (Ada.lovelaceValueOf 0)
+        )
+        do
+            pob1 <- activateContractWallet w1 contract'
+            void $ Emulator.waitNSlots 2
+            callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 50_000_000)
+            void $ Emulator.waitNSlots 2
+            pob2 <- activateContractWallet w2 contract'
+            void $ Emulator.waitNSlots 2
+            callEndpoint @"redeem" pob2 ()
+            void $ Emulator.waitNSlots 2
     ]
-    where
+  where
+    check = checkPredicateOptions (defaultCheckOptions & emulatorConfig .~ defaultEmCfg & minLogLevel .~ Log.Debug)
+    -- check with output:
+    -- check name _preds act = testCase name $ runEmulatorTraceIO' def defaultEmCfg act
 
-contract' :: Contract (Value) Schema Text ()
-contract' = ProofOfBurn.contract
 
-myTrace :: EmulatorTrace ()
-myTrace = do
-    pob1 <- activateContractWallet w1 contract'
-    void $ Emulator.waitNSlots 2
-    callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 50_000_000)
-    void $ Emulator.waitNSlots 2
-    pob2 <- activateContractWallet w2 contract'
-    void $ Emulator.waitNSlots 2
-    callEndpoint @"redeem" pob2 ()
-    void $ Emulator.waitNSlots 2
-    return ()
+defaultEmCfg :: Emulator.EmulatorConfig
+defaultEmCfg = Emulator.EmulatorConfig (Left $ Map.fromList [(w1, v), (w2, v), (w3, v)]) def def
+  where
+    v :: Value
+    v = Ada.lovelaceValueOf 100_000_000
+

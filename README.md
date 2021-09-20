@@ -14,98 +14,61 @@ Then copy paste `ProofOfBurn.hs` and compile and evaluate.
 
 ## Trying on testnet
 
-1. Download cardano-wallet [release](https://github.com/input-output-hk/cardano-wallet/releases) and copy all binaries to your PATH
-
-2. Download testnet config from https://hydra.iohk.io/build/7366583/download/1/index.html
+1. Starting node and wallet:
 
 ```sh
-mkdir -p config/testnet/
-cd config/testnet/
-curl -O https://hydra.iohk.io/build/7366583/download/1/testnet-config.json
-curl -O https://hydra.iohk.io/build/7366583/download/1/testnet-byron-genesis.json
-curl -O https://hydra.iohk.io/build/7366583/download/1/testnet-shelley-genesis.json
-curl -O https://hydra.iohk.io/build/7366583/download/1/testnet-alonzo-genesis.json
-curl -O https://hydra.iohk.io/build/7366583/download/1/testnet-topology.json
-curl -O https://hydra.iohk.io/build/7366583/download/1/testnet-db-sync-config.json
-curl -O https://hydra.iohk.io/build/7366583/download/1/rest-config.json
-cd ../..
+export NETWORK=testnet
+docker-compose up -d
 ```
 
-3. Run the node
+2. Creating/restoring a wallet
 
 ```sh
-mkdir -p db/testnet
-cardano-node run \
-		--topology config/testnet/testnet-topology.json \
-		--database-path db/testnet \
-		--socket-path node.socket \
-		--port 3001 \
-		--config config/testnet/testnet-config.json
-export CARDANO_NODE_SOCKET_PATH=$(pwd)/node.socket
+. scripts/wallet.sh
+create_wallet "Wallet name" "mnemonic sentence phrase" "password"
 ```
 
-4. Run the wallet
+3. Get unused payment address
 
 ```sh
-mkdir -p db/wallet
-cardano-wallet serve \
-  --testnet config/testnet/testnet-byron-genesis.json \
-  --node-socket node.socket \
-  --database db/wallet
+first_unused_payment_address "$(first_wallet_id)"
 ```
 
-5. Create a wallet
+4. Apply for faucet funds by entering the address from the previous step in: https://testnets.cardano.org/en/testnets/cardano/tools/faucet/
+
+5. Check that you got the funds
 
 ```sh
-cardano-address recovery-phrase generate > passphrase
-cat passphrase
-cardano-wallet wallet create from-recovery-phrase "My Wallet" # enther the phrase from the previous step
+available_funds "$(first_wallet_id)"
 ```
 
-6. Get payment address
+6. Create keys
 
 ```sh
-cardano-wallet address list $(cardano-wallet wallet list | jq -r '.[].id') | jq -r '.[0].id'
+mkdir out/
+docker-compose run -v $(pwd):/pwd -w /pwd -u $(id -u ${USER}):$(id -g ${USER}) cardano-wallet \
+	sh -c 'source scripts/wallet.sh && create_keys out <mnemonic>'
 ```
 
-7. Apply for faucet funds by entering the address from the previous step in: https://testnets.cardano.org/en/testnets/cardano/tools/faucet/
-
-8. Check that you got the funds
+7. Build plutus script
 
 ```sh
-cardano-wallet wallet utxo $(cardano-wallet wallet list | jq -r '.[].id')
+cabal run plutus-burner
 ```
 
-9. Create keys
-
-```sh
-cat passphrase \
-    | cardano-address key from-recovery-phrase Shelley > root.prv
-cat root.prv \
-    | cardano-address key child 1852H/1815H/0H \
-    | tee acct.prv \
-    | cardano-address key public --with-chain-code > acct.pub
-cat root.prv \
-	| cardano-address key child 1852H/1815H/0H/0/0 > addr.prv
-cardano-cli key convert-cardano-address-key --shelley-payment-key --signing-key-file addr.prv --out-file key.skey
-cardano-cli key verification-key --signing-key-file key.skey --verification-key-file key.vkey
-```
-
-
-10. Create addresses
+8. Create addresses
 
 ```sh
 # script address
-cardano-cli address build --payment-script-file result.plutus --testnet-magic 1097911063 --out-file burn.addr
+docker-compose run -v $(pwd):/pwd -w /pwd -u $(id -u ${USER}):$(id -g ${USER}) cardano-wallet \
+	sh -c 'source scripts/wallet.sh && script_address out result.plutus'
 
 # payment address
-cardano-cli address build \
-	--payment-verification-key-file key.vkey \
-	--out-file payment.addr \
-	--testnet-magic 1097911063
+docker-compose run -v $(pwd):/pwd -w /pwd -u $(id -u ${USER}):$(id -g ${USER}) cardano-wallet \
+	sh -c 'source scripts/wallet.sh && payment_address out'
 ```
 
-10. Burn some funds
+9. Burn some funds
 
 ```sh
 # generate protocol parameters
@@ -172,3 +135,4 @@ cardano-cli transaction build \
 * https://github.com/input-output-hk/cardano-wallet/wiki/Wallet-command-line-interface
 * https://developers.cardano.org/docs/smart-contracts/plutus
 * https://docs.cardano.org/plutus/learn-about-plutus
+* https://input-output-hk.github.io/cardano-wallet/api/edge

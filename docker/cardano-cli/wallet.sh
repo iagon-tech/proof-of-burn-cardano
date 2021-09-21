@@ -88,11 +88,13 @@ flip_last_bit() {
 	export BC_LINE_LENGTH=0
     [ -z "$1" ] && die "Error: no argument given to flip_last_bit"
 	_binary=$(echo "obase=2; ibase=16; $(echo "$1" | tr 'a-f' 'A-F')" | bc)
-	_prefix=$(echo -n $_binary | head -c -1)
-	_tail=$(echo -n $_binary | tail -c 1)
+	_prefix=$(printf "%s" "$_binary" | head -c -1)
+	_tail=$(printf "%s" "$_binary" | tail -c 1)
+	# shellcheck disable=SC2004
 	_tail_flipped=$(( $_tail ^ 1 ))
 	echo "obase=16; ibase=2; ${_prefix}${_tail_flipped}" | bc | tr 'A-F' 'a-f'
 
+	unset _binary _prefix _tail _tail_flipped
 }
 
 # @FUNCTION: sha3_256
@@ -184,7 +186,7 @@ first_wallet_id() {
 addresses() {
     [ -z "$1" ] && die "Error: no argument given to addresses"
 
-	curl -X GET ${WALLET_URL}/v2/wallets/$1/addresses
+	curl -X GET "${WALLET_URL}/v2/wallets/$1/addresses"
 }
 
 # @FUNCTION: unused_payment_adresses
@@ -217,7 +219,7 @@ first_unused_payment_address() {
 wallet() {
     [ -z "$1" ] && die "Error: no argument given to wallet"
 
-	curl -X GET ${WALLET_URL}/v2/wallets/$1
+	curl -X GET "${WALLET_URL}/v2/wallets/$1"
 }
 
 # @FUNCTION: available_funds
@@ -371,8 +373,8 @@ create_script_transaction() {
 			--alonzo-era \
 			--tx-in "$tx_in" \
 			--tx-out "$burn_addr+$burn_amount" \
-			--tx-out-datum-hash $burn_datum \
-			--change-address $change_addr \
+			--tx-out-datum-hash "$burn_datum" \
+			--change-address "$change_addr" \
 			--testnet-magic "${TESTNET_MAGIC}" \
 			--protocol-params-file "$out_dir"/pparams.json \
 			--out-file "$out_dir"/tx.raw
@@ -381,8 +383,8 @@ create_script_transaction() {
 			--alonzo-era \
 			--tx-in "$tx_in" \
 			--tx-out "$burn_addr+$burn_amount" \
-			--tx-out-datum-hash $burn_datum \
-			--change-address $change_addr \
+			--tx-out-datum-hash "$burn_datum" \
+			--change-address "$change_addr" \
 			--protocol-params-file "$out_dir"/pparams.json \
 			--out-file "$out_dir"/tx.raw
 	fi
@@ -484,7 +486,7 @@ bootstrap_wallet() {
 		echo "Make sure you have funds to make transactions"
 	fi
 	echo "Press enter to proceed"
-	read -r foo
+	read -r
 	unset foo
 
 	create_keys out "$1"
@@ -509,9 +511,9 @@ burn_funds() {
 	edo submit_transaction "out/tx.sign"
 
 	echo "Wait a while for the transaction to succeed, then press enter"
-	read -r foo
+	read -r
 
-	get_utxo $(cat out/burn.addr)
+	get_utxo "$(cat out/burn.addr)"
 
 	rm -f out/burn_hash.txt out/payment.addr tx.raw tx.sign
 }

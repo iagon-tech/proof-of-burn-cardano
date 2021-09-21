@@ -40,6 +40,8 @@ services:
     volumes:
       - wallet-${NETWORK}-db:/wallet-db
       - node-ipc:/ipc
+    networks:
+      - wallet
     ports:
       - 8090:8090
     entrypoint: []
@@ -59,6 +61,19 @@ services:
         max-file: "10"
         max-size: "50m"
 
+  cardano-cli:
+    tty: true
+    stdin_open: true
+    build: docker/cardano-cli
+    volumes:
+      - node-ipc:/ipc
+    networks:
+      - wallet
+    command: ["echo", "Service cardano-cli disabled"]
+    environment:
+      NETWORK:
+      CARDANO_NODE_SOCKET_PATH: /ipc/node.socket
+
 volumes:
   node-config:
   node-ipc:
@@ -69,3 +84,5 @@ volumes:
   wallet-mainnet-db:
   wallet-testnet-db:
 
+networks:
+  wallet:

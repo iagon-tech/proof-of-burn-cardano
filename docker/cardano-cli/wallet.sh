@@ -3,6 +3,9 @@
 
 : "${WALLET_URL:=http://localhost:8090}"
 : "${TESTNET_MAGIC:=1097911063}"
+: "${BLOCKFROST_TESTNET_URL:=https://cardano-testnet.blockfrost.io}"
+: "${BLOCKFROST_MAINNET_URL:=https://cardano-mainnet.blockfrost.io}"
+: "${BLOCKFROST_API_TOKEN}"
 
 
 
@@ -242,7 +245,6 @@ available_funds() {
    ########################
 
 
-# TODO: use a blockchain indexer e.g. cardano-graphql/blockfrost/cardano-db-sync/...
 # @FUNCTION: get_utxo
 # @USAGE: <address>
 # @DESCRIPTION:
@@ -250,12 +252,17 @@ available_funds() {
 get_utxo() {
     [ -z "$1" ] && die "Error: no argument given to get_utxo"
 
+	[ -n "${BLOCKFROST_API_TOKEN}" ] || die "BLOCKFROST_API_TOKEN not set"
+
 	if [ "$NETWORK" = "testnet" ] ; then
-		edo cardano-cli query utxo --testnet-magic "${TESTNET_MAGIC}" --address "$1"
+		curl -s -X GET -H "project_id: ${BLOCKFROST_API_TOKEN}" \
+			"${BLOCKFROST_TESTNET_URL}/api/v0/addresses/$1/utxos"
 	else
-		edo cardano-cli query utxo --address "$1"
+		curl -s -X GET -H "project_id: ${BLOCKFROST_API_TOKEN}" \
+			"${BLOCKFROST_MAINNET_URL}/api/v0/addresses/$1/utxos"
 	fi
 }
+
 
 
 
@@ -528,15 +535,19 @@ burn_funds() {
 	lock_funds "$1" "$(flip_last_bit "$(sha3_256 "$2")")" "$3"
 }
 
-# @FUNCTION: redeem_funds
-# @USAGE: <wallet-id> <TxHash> <TxIx> <datum>
+# @FUNCTION: validate_burn
+# @USAGE: <cleartext-datum> <script-address>
 # @DESCRIPTION:
 # Redeem funds.
 validate_burn() {
-	[ "$#" -lt 3 ] && die "error: not enough arguments to validate_burn (expexted 3)"
+	[ "$#" -lt 2 ] && die "error: not enough arguments to validate_burn (expexted 2)"
 
-	expected=$(datum_hash "$(flip_last_bit "$(sha3_256 "$1")")")
-	actual="TODO"
+	datum=$(datum_hash "$(flip_last_bit "$(sha3_256 "$1")")")
+	[ -n "${datum}" ] || die "Could not get datum hash"
+	funds=$(get_utxo "$2" | jq --arg h "$datum" -r '[.[] | select(.data_hash ==$h) | .amount | map(.quantity) | map(tonumber)] | flatten | add')
+
+	(>&2 printf "Following amount has been confirmed as burned for the given datum: ")
+	echo "$funds"
 }
 
 # @FUNCTION: lock_funds

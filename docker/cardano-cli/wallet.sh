@@ -339,22 +339,9 @@ gen_protocol_parameters() {
 	unset out_dir
 }
 
-
-# @FUNCTION: hash_datum_value
-# @USAGE: <commitment>
-# @DESCRIPTION:
-# Converts burn commitment to a full datum hash ready to be submitted
-# in a transaction.
-# @STDOUT: The hashed string.
-hash_datum_value() {
-    [ -z "$1" ] && die "Error: no argument given to hash_datum_value"
-
-	edo to_burn_datum_hash "$1"
-}
-
 # TODO: use wallet API
 # @FUNCTION: create_script_transaction
-# @USAGE: <out-dir> <tx_in> <burn_addr> <burn_amount> <burn_datum> <change_addr> [redeemer] [collateral]
+# @USAGE: <out-dir> <tx_in> <addr> <amount> <datum> <change_addr>
 # @DESCRIPTION:
 # Create a transaction for a plutus script.
 create_script_transaction() {
@@ -538,10 +525,30 @@ bootstrap_wallet() {
 # Burn funds.
 # @STDOUT: UTxO of the burn script
 burn_funds() {
-	[ "$#" -lt 3 ] && die "error: not enough arguments to burn_funds (expexted 3)"
+	lock_funds "$1" "$(flip_last_bit "$(sha3_256 "$2")")" "$3"
+}
+
+# @FUNCTION: redeem_funds
+# @USAGE: <wallet-id> <TxHash> <TxIx> <datum>
+# @DESCRIPTION:
+# Redeem funds.
+validate_burn() {
+	[ "$#" -lt 3 ] && die "error: not enough arguments to validate_burn (expexted 3)"
+
+	expected=$(datum_hash "$(flip_last_bit "$(sha3_256 "$1")")")
+	actual="TODO"
+}
+
+# @FUNCTION: lock_funds
+# @USAGE: <wallet-id> <commitment> <amount>
+# @DESCRIPTION:
+# Burn funds.
+# @STDOUT: UTxO of the plutus script
+lock_funds() {
+	[ "$#" -lt 3 ] && die "error: not enough arguments to lock_funds (expexted 3)"
 
 	edo payment_address out
-	hash_datum_value "$2" > out/burn_hash.txt || die
+	datum_hash "$2" > out/burn_hash.txt || die
 
 	json=$(coin_selection "$1" "$(cat out/burn.addr)" "$3")
 	[ -n "${json}" ] || die "Could not perform coin selection"
@@ -565,16 +572,31 @@ burn_funds() {
 	rm -f out/burn_hash.txt out/payment.addr tx.raw tx.sign
 }
 
-validate_burn() {
-	:
-}
-
-lock_funds() {
-	:
-}
-
+# @FUNCTION: redeem_funds
+# @USAGE: <wallet-id> <TxHash> <TxIx> <datum>
+# @DESCRIPTION:
+# Redeem funds.
 redeem_funds() {
-	:
+	[ "$#" -lt 4 ] && die "error: not enough arguments to redeem_funds (expexted 4)"
+
+	json=$(coin_selection "$1" "$(cat out/burn.addr)" "1000000")
+	[ -n "${json}" ] || die "Could not perform coin selection"
+	# TODO: we just pick the first transaction
+	tx_hash=$(echo "$json" | jq -e -r '.inputs | .[0].id')
+	[ -n "${tx_hash}" ] && [ "${tx_hash}" != "null" ] || die "Could not get TxHash"
+	tx_ix=$(echo "$json" | jq -e -r '.inputs | .[0].index')
+	[ -n "${tx_ix}" ] && [ "${tx_ix}" != "null" ] || die "Could not get TxIx"
+	change_address=$(echo "$json" | jq -e -r '.change | .[0].address')
+	[ -n "${change_address}" ] && [ "${change_address}" != "null" ] || die "Could not get change address"
+
+	edo redeem_script_transaction \
+		out \
+		"$2#$3" \
+		"out/result.plutus" \
+		"$4" \
+		"$4" \
+		"${tx_hash}#${tx_ix}" \
+		"$change_address"
 }
 
 

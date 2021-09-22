@@ -1,4 +1,5 @@
 #!/bin/sh
+# shellcheck disable=SC2015
 
 : "${WALLET_URL:=http://localhost:8090}"
 : "${TESTNET_MAGIC:=1097911063}"
@@ -153,7 +154,7 @@ create_wallet() {
   }
 EOF
 
-	curl -H "Content-Type: application/json" --data @/tmp/payload ${WALLET_URL}/v2/wallets
+	curl -s -H "Content-Type: application/json" --data @/tmp/payload "${WALLET_URL}/v2/wallets"
 
 	ret=$?
 	rm /tmp/payload
@@ -167,7 +168,7 @@ EOF
 # Gets all wallets currently registered in the wallet DB.
 # STDOUT: Response JSON, see https://input-output-hk.github.io/cardano-wallet/api/edge/#operation/listWallets
 wallets() {
-	curl -X GET ${WALLET_URL}/v2/wallets
+	curl -s -X GET "${WALLET_URL}/v2/wallets"
 }
 
 # @FUNCTION: first_wallet_id
@@ -186,7 +187,7 @@ first_wallet_id() {
 addresses() {
     [ -z "$1" ] && die "Error: no argument given to addresses"
 
-	curl -X GET "${WALLET_URL}/v2/wallets/$1/addresses"
+	curl -s -X GET "${WALLET_URL}/v2/wallets/$1/addresses"
 }
 
 # @FUNCTION: unused_payment_adresses
@@ -219,7 +220,7 @@ first_unused_payment_address() {
 wallet() {
     [ -z "$1" ] && die "Error: no argument given to wallet"
 
-	curl -X GET "${WALLET_URL}/v2/wallets/$1"
+	curl -s -X GET "${WALLET_URL}/v2/wallets/$1"
 }
 
 # @FUNCTION: available_funds
@@ -230,7 +231,7 @@ wallet() {
 available_funds() {
     [ -z "$1" ] && die "Error: no argument given to available_funds"
 
-	edo wallet "$1" | jq '.balance.available.quantity'
+	edo wallet "$1" | jq -r '.balance.available.quantity'
 }
 
 
@@ -464,6 +465,36 @@ submit_transaction() {
 	fi
 }
 
+# @FUNCTION: coin_selection
+# @USAGE: <wallet-id> <to-address> <quantity>
+# @DESCRIPTION:
+# Make a coin selection via the wallet API.
+# STDOUT: Response JSON, see https://input-output-hk.github.io/cardano-wallet/api/edge/#operation/selectCoins
+coin_selection() {
+	[ "$#" -lt 3 ] && die "error: not enough arguments to coin_selection (expexted 3)"
+
+	cat <<EOF > /tmp/payload
+{
+  "payments": [
+    {
+      "address": "$2",
+      "amount": {
+        "quantity": $3,
+        "unit": "lovelace"
+      }
+    }
+  ]
+}
+EOF
+
+	curl -s -H "Content-Type: application/json" --data @/tmp/payload "${WALLET_URL}/v2/wallets/$1/coin-selections/random"
+
+	ret=$?
+	rm /tmp/payload
+
+	[ "$ret" -ne 0 ] && die "Failed to perform coin selection"
+	unset ret
+}
 
 
 
@@ -477,40 +508,56 @@ submit_transaction() {
 # @USAGE: <memonic> <passphrase>
 # @DESCRIPTION:
 # Bootstrap the wallet.
+# @STDOUT: wallet id
 bootstrap_wallet() {
-	edo create_wallet "My wallet" "$1" "$2"
-	edo first_unused_payment_address "$(first_wallet_id)" > out/faucet.addr
+	[ "$#" -lt 2 ] && die "error: not enough arguments to bootstrap_wallet (expexted 2)"
+
+	wallet_id=$(create_wallet "My wallet" "$1" "$2" | jq -r -e .id)
+	[ -n "${wallet_id}" ] && [ "${wallet_id}" != "null" ] || die "Could not create wallet"
+	edo first_unused_payment_address "$(first_wallet_id)" > out/faucet.addr 2>&1
 	if [ "$NETWORK" = "testnet" ] ; then
-		echo "Apply for faucet funds with the address $(cat out/faucet.addr) at https://testnets.cardano.org/en/testnets/cardano/tools/faucet/"	
+		(>&2 echo "Apply for faucet funds with the address $(cat out/faucet.addr) at https://testnets.cardano.org/en/testnets/cardano/tools/faucet/"	)
 	else
-		echo "Make sure you have funds to make transactions"
+		(>&2 echo "Make sure you have funds to make transactions")
 	fi
-	echo "Press enter to proceed"
-	read -r
-	unset foo
+	(>&2 echo "Press enter to proceed")
+	read -r 2>&1
 
-	create_keys out "$1"
+	create_keys out "$1" 2>&1
 
-	script_address out out/result.plutus
+	script_address out out/result.plutus 2>&1
+
+	(>&2 printf "Your wallet id is: ")
+	echo "$wallet_id"
+	unset wallet_id
 }
 
 # @FUNCTION: burn_funds
-# @USAGE: <commitment> <addr_with_utxo> <amount>
+# @USAGE: <wallet-id> <commitment> <amount>
 # @DESCRIPTION:
 # Burn funds.
+# @STDOUT: UTxO of the burn script
 burn_funds() {
-	edo payment_address out
-	hash_datum_value "$1" > out/burn_hash.txt || die
-	tx_hash=$(get_utxo "$2" | tail -n +3 | awk '{ print $1 }')
-	[ -n "${tx_hash}" ] || die "tx_hash empty"
-	tx_ix=$(get_utxo "$2" | tail -n +3 | awk '{ print $2 }')
-	[ -n "${tx_ix}" ] || die "tx_ix empty"
+	[ "$#" -lt 3 ] && die "error: not enough arguments to burn_funds (expexted 3)"
 
-	edo create_script_transaction out "${tx_hash}#${tx_ix}" "$(cat out/burn.addr)" "$3" "$(cat out/burn_hash.txt)" "$(cat out/payment.addr)"
+	edo payment_address out
+	hash_datum_value "$2" > out/burn_hash.txt || die
+
+	json=$(coin_selection "$1" "$(cat out/burn.addr)" "$3")
+	[ -n "${json}" ] || die "Could not perform coin selection"
+	# TODO: we just pick the first transaction
+	tx_hash=$(echo "$json" | jq -e -r '.inputs | .[0].id')
+	[ -n "${tx_hash}" ] && [ "${tx_hash}" != "null" ] || die "Could not get TxHash"
+	tx_ix=$(echo "$json" | jq -e -r '.inputs | .[0].index')
+	[ -n "${tx_ix}" ] && [ "${tx_ix}" != "null" ] || die "Could not get TxIx"
+	change_address=$(echo "$json" | jq -e -r '.change | .[0].address')
+	[ -n "${change_address}" ] && [ "${change_address}" != "null" ] || die "Could not get change address"
+
+	edo create_script_transaction out "${tx_hash}#${tx_ix}" "$(cat out/burn.addr)" "$3" "$(cat out/burn_hash.txt)" "$(cat out/payment.addr)" "${change_address}"
 	edo sign_transaction "out/tx.raw" "out/key.skey" "out/tx.sign"
 	edo submit_transaction "out/tx.sign"
 
-	echo "Wait a while for the transaction to succeed, then press enter"
+	(>&2 echo "Wait a while for the transaction to succeed, then press enter")
 	read -r
 
 	get_utxo "$(cat out/burn.addr)"

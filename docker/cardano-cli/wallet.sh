@@ -506,7 +506,14 @@ EOF
 bootstrap_wallet() {
 	[ "$#" -lt 2 ] && die "error: not enough arguments to bootstrap_wallet (expexted 2)"
 
-	wallet_id=$(create_wallet "My wallet" "$1" "$2" | jq -r -e .id)
+	_wallet=$(create_wallet "My wallet" "$1" "$2")
+	if [ "$(echo "${_wallet}" | jq -r .code)" = "wallet_already_exists" ] ; then
+		(>&2 echo "Wallet already exists, skipping...")
+		wallet_id=$(echo "${_wallet}" | jq -r -e .message | sed 's/^.*following id: //' | sed 's/ However.*$//')
+	else
+		wallet_id=$(echo "${_wallet}" | jq -r -e .id)
+	fi
+	
 	[ -n "${wallet_id}" ] && [ "${wallet_id}" != "null" ] || die "Could not create wallet"
 	edo first_unused_payment_address "$(first_wallet_id)" > out/faucet.addr 2>&1
 	if [ "$NETWORK" = "testnet" ] ; then
@@ -523,7 +530,7 @@ bootstrap_wallet() {
 
 	(>&2 printf "Your wallet id is: ")
 	echo "$wallet_id"
-	unset wallet_id
+	unset _wallet wallet_id
 }
 
 # @FUNCTION: burn_funds

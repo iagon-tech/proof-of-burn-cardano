@@ -35,83 +35,30 @@ docker-compose run cardano-wallet \
 3. Creating/restoring a wallet
 
 ```sh
-. wallet.sh
-create_wallet "Wallet name" "mnemonic sentence phrase" "password"
+scripts/cardano-cli.sh 'wallet.sh bootstrap_wallet <mnemonic sentence phrase> <password>'
 ```
 
-4. Get unused payment address
+4. Burn funds
 
 ```sh
-first_unused_payment_address "$(first_wallet_id)" > out/faucet.addr
-cat out/faucet.addr
+scripts/cardano-cli.sh 'wallet.sh burn_funds <wallet-id> <commitment> <amount>'
 ```
 
-5. Apply for faucet funds by entering the address from the previous step in: https://testnets.cardano.org/en/testnets/cardano/tools/faucet/
-
-6. Check that you got the funds
+5. Validate burn
 
 ```sh
-available_funds "$(first_wallet_id)"
+scripts/cardano-cli.sh 'wallet.sh validate_burn <commitment> $(cat out/burn.addr)'
 ```
 
-7. Create keys
+6. Check that we can't redeem
 
 ```sh
+# find txhash/txix to redeem
+scripts/cardano-cli.sh 'wallet.sh get_utxo $(cat out/burn.addr)' | jq -r .
+
+# use txhash/txix from previous step
 scripts/cardano-cli.sh \
-	'wallet.sh create_keys out <mnemonic>'
-```
-
-8. Create addresses
-
-```sh
-# script address
-scripts/cardano-cli.sh \
-	'wallet.sh script_address out out/result.plutus'
-
-# payment address
-scripts/cardano-cli.sh \
-	'wallet.sh payment_address out'
-```
-
-9. Burn some funds
-
-```sh
-# hash datum value
-scripts/cardano-cli.sh \
-	'wallet.sh hash_datum_value "<commitment>" > out/burn_hash.txt'
-
-# find the TxHash and TxIx that contains your faucet funds
-scripts/cardano-cli.sh \
-	'wallet.sh get_utxo $(cat out/faucet.addr)'
-
-# build the transaction
-scripts/cardano-cli.sh \
-	'wallet.sh create_script_transaction out "<TxHash>#<TxIx>" "$(cat out/burn.addr)" "98000000" "$(cat out/burn_hash.txt)" "$(cat out/payment.addr)"'
-
-# sign the stransaction
-scripts/cardano-cli.sh \
-	'wallet.sh sign_transaction "out/tx.raw" "out/key.skey" "out/tx.sign"'
-
-# submit the transaction
-scripts/cardano-cli.sh \
-	'wallet.sh submit_transaction "out/tx.sign"'
-```
-
-10. Query script address balance
-
-```sh
-# recored the script TxHash and TxIx
-scripts/cardano-cli.sh \
-	'wallet.sh get_utxo $(cat out/burn.addr)'
-```
-
-11. Check that we can't redeem
-
-```sh
-# First "<TxHash>#<TxIx>" is from script (previous step)
-# Second "<TxHash>#<TxIx>" is collateral (remaining utxo from wallet)
-scripts/cardano-cli.sh \
-	'wallet.sh create_script_transaction out "<TxHash>#<TxIx>" "out/result.plutus" <commitment> <commitment> "<TxHash>#<TxIx>" "$(cat out/payment.addr)"'
+	'wallet.sh redeem_funds <wallet-id> <txhash> <txix> <datum>'
 ```
 
 ## Resources

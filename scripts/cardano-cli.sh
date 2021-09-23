@@ -10,8 +10,7 @@ if ! docker ps -q --no-trunc | grep -q "$(docker-compose ps -q cardano-node)" ; 
 fi
 
 docker-compose run \
-	-v "$(pwd)":/pwd:ro \
-	-v "$(pwd)"/out:/pwd/out \
+	-v "$(pwd)":/pwd \
 	-w /pwd \
 	-u "$(id -u "${USER}")":"$(id -g "${USER}")" \
 	-e WALLET_URL=http://cardano-wallet:8090 \

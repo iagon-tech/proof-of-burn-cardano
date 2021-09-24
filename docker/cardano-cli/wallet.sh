@@ -523,7 +523,7 @@ bootstrap_wallet() {
 	fi
 	
 	[ -n "${wallet_id}" ] && [ "${wallet_id}" != "null" ] || die "Could not create wallet"
-	payment_addr=$(first_unused_payment_address "$(first_wallet_id)")
+	payment_addr=$(first_unused_payment_address "${wallet_id}")
 	[ -n "${payment_addr}" ] || die "Could not get payment address"
 	if [ "$NETWORK" = "testnet" ] ; then
 		(>&2 echo "Apply for faucet funds with the address $payment_addr at https://testnets.cardano.org/en/testnets/cardano/tools/faucet/"	)

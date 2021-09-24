@@ -605,7 +605,7 @@ lock_funds() {
 		"$(cat "${state_dir}/burn.addr")" \
 		"$4" \
 		"$(cat "${state_dir}/burn_hash.txt")" \
-		"$(cat "${state_dir}/payment.addr")" "${change_address}"
+		"${change_address}"
 
 	edo sign_transaction "${state_dir}/tx.raw" "${state_dir}/key.skey" "${state_dir}/tx.sign"
 	edo submit_transaction "${state_dir}/tx.sign"

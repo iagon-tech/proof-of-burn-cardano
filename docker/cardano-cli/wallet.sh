@@ -542,8 +542,6 @@ bootstrap_wallet() {
 		"${state_dir}/key.vkey" \
 		"$2" 2>&1
 
-	script_address "${state_dir}/burn.addr" "result.plutus" 2>&1
-
 	(>&2 printf "Your wallet id is: ")
 	echo "$wallet_id"
 	unset _wallet wallet_id _state_dir
@@ -583,6 +581,9 @@ lock_funds() {
 
 	state_dir=$1
 	[ -e "${state_dir}" ] || die "state_dir doesn't exist!"
+
+	[ -e "result.plutus" ] || die "Plutus script doesn't exist at result.plutus"
+	script_address "${state_dir}/burn.addr" "result.plutus" 2>&1
 
 	edo payment_address "${state_dir}/key.vkey" "${state_dir}/payment.addr"
 	datum_hash "$3" > "${state_dir}/burn_hash.txt" || die
@@ -627,6 +628,7 @@ redeem_funds() {
 	state_dir=$1
 	[ -e "${state_dir}" ] || die "state_dir doesn't exist!"
 	[ -e "result.plutus" ] || die "Plutus script doesn't exist at result.plutus"
+	script_address "${state_dir}/burn.addr" "result.plutus" 2>&1
 
 	json=$(coin_selection "$2" "$(cat "${state_dir}/burn.addr")" "1000000")
 	[ -n "${json}" ] || die "Could not perform coin selection"

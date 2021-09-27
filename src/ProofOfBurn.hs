@@ -81,9 +81,8 @@ PlutusTx.unstableMakeIsData ''MyRedeemer
 {-# INLINABLE validateSpend #-}
 -- | Spending validator checks that hash of the redeeming address is the same as the Utxo datum.
 validateSpend :: ValidatorType Burner
-validateSpend (MyDatum addrHash) _myRedeemerValue ScriptContext { scriptContextTxInfo = TxInfo { txInfoSignatories = [addr] } } =
-   addrHash == sha3_256 (getPubKeyHash addr)
-validateSpend _ _  _ = traceError "Expecting exactly one signatory."
+validateSpend (MyDatum addrHash) _myRedeemerValue ScriptContext { scriptContextTxInfo = txinfo } =
+   traceIfFalse "owner has not signed" (addrHash `elem` fmap (sha3_256 . getPubKeyHash) (txInfoSignatories txinfo))
 
 -- | The address of the contract (the hash of its validator script).
 contractAddress :: Address

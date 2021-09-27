@@ -13,6 +13,29 @@
    ## Utility functions ##
    #######################
 
+# @FUNCTION: ask_for_confirmation
+# @USAGE: [confirmation-msg]
+# @DESCRIPTION:
+# Asks the user for confirmation and returns 0 for yes, 1 for no.
+# @RETURN: 0 if user confirmed, 1 otherwise
+ask_for_confirmation() {
+    confirmation_msg=$1
+
+    if [ -n "${confirmation_msg}" ] ; then
+        printf "%s\\n(y/n and press Enter)\\n" "${confirmation_msg}"
+    else
+        printf "Confirm action: (y/n and press Enter)\\n"
+    fi
+    read -r answer
+
+    if [ "${answer}" != "${answer#[Yy]}" ] ;then
+        return 0
+    else
+        return 1
+    fi
+
+    unset confirmation_msg answer
+}
 
 # @FUNCTION: die
 # @USAGE: [msg]
@@ -282,24 +305,18 @@ get_utxo() {
 
 
 # TODO: use wallet API
-# @FUNCTION: create_keys
-# @USAGE: <root-prv-out-file> <acct-prv-out-file> <acct-pub-out-file> <addr-prv-out-file> <skey-out-file> <vkey-out-file> <mnemonic-phrase>
+# @FUNCTION: create_priv_keys
+# @USAGE: <root-prv-out-file> <acct-prv-out-file> <acct-pub-out-file> <mnemonic-phrase>
 # @DESCRIPTION:
-# Create signing and verification keys to be used for a transaction.
-create_keys() {
-	[ "$#" -lt 7 ] && die "error: not enough arguments to create_keys (expexted at least 7)"
+# Create root privkey, account privkey/pubkey
+create_priv_keys() {
+	[ "$#" -lt 7 ] && die "error: not enough arguments to create_priv_keys (expexted at least 7)"
 
 	root_prv_out_file=$1
 	shift
 	acct_prv_out_file=$1
 	shift
 	acct_pub_file=$1
-	shift
-	addr_out_file=$1
-	shift
-	skey_out_file=$1
-	shift
-	vkey_out_file=$1
 	shift
 
 	edo echo "$@" \
@@ -308,23 +325,57 @@ create_keys() {
 		   | cardano-address key child 1852H/1815H/0H \
 		   | tee "$acct_prv_out_file" \
 		   | cardano-address key public --with-chain-code > "$acct_pub_file"
-	edo cat "$root_prv_out_file" \
-		   | cardano-address key child 1852H/1815H/0H/0/0 > "$addr_out_file"
 
-	edo cardano-cli key convert-cardano-address-key --shelley-payment-key --signing-key-file "$addr_out_file" --out-file "$skey_out_file"
+	unset root_prv_out_file acct_prv_out_file acct_pub_file
+}
+
+# TODO: use wallet API
+# @FUNCTION: create_svkeys
+# @USAGE: <root-prv-in-file> <skey-out-file> <vkey-out-file> <derivation-path>
+# @DESCRIPTION:
+# Create signing and verification keys to be used for a transaction.
+create_svkeys() {
+	[ "$#" -lt 4 ] && die "error: not enough arguments to create_svkeys (expexted at least 4)"
+
+	root_prv_in_file=$1
+	skey_out_file=$2
+	vkey_out_file=$3
+
+    tmp_dir=$(mktempdir)
+    { [ -z "${tmp_dir}" ] || ! [ -d "${tmp_dir}" ] ; } && die "Failed to create temporary directory"
+	edo cat "$root_prv_in_file" \
+		   | cardano-address key child "$4" > "${tmp_dir}/addr.prv"
+
+	edo cardano-cli key convert-cardano-address-key --shelley-payment-key --signing-key-file "${tmp_dir}/addr.prv" --out-file "$skey_out_file"
 	edo cardano-cli key verification-key --signing-key-file "$skey_out_file" --verification-key-file "$vkey_out_file"
 
-	unset addr_out_file skey_out_file vkey_out_file root_prv_out_file acct_prv_out_file acct_pub_file
+    [ -e "${tmp_dir}" ] && rm -r "${tmp_dir}"
+	unset skey_out_file vkey_out_file root_prv_in_file tmp_dir
 }
 
 # TODO: use wallet API
 # @FUNCTION: get_pubkey_hash
-# @USAGE: <addr-prv-in-file>
+# @USAGE: <root-prv-in-file> <derivation-path>
 # @DESCRIPTION:
-# Create signing and verification keys to be used for a transaction.
+# Get wallet p
 # @STDOUT: pubkey hash
 get_pubkey_hash() {
-	sha3_256 "$(cat "$1" | cardano-address key public --with-chain-code)"
+	[ "$#" -lt 2 ] && die "error: not enough arguments to get_pubkey_hash (expexted at least 2)"
+
+	root_prv_in_file=$1
+
+    tmp_dir=$(mktempdir)
+    { [ -z "${tmp_dir}" ] || ! [ -d "${tmp_dir}" ] ; } && die "Failed to create temporary directory"
+	edo cat "$root_prv_in_file" \
+		   | cardano-address key child "$2" > "${tmp_dir}/addr.prv"
+
+	edo cat "${tmp_dir}/addr.prv" \
+		| cardano-address key public --with-chain-code > "${tmp_dir}/addr.xvk"
+
+	cardano-cli address key-hash --payment-verification-key-file "${tmp_dir}/addr.xvk"
+
+    [ -e "${tmp_dir}" ] && rm -r "${tmp_dir}"
+	unset skey_out_file vkey_out_file root_prv_in_file tmp_dir
 }
 
 # TODO: use wallet API
@@ -369,12 +420,12 @@ gen_protocol_parameters() {
 }
 
 # TODO: use wallet API
-# @FUNCTION: create_script_transaction
-# @USAGE: <tx-out-file> <tx_in> <addr> <amount> <datum> <change_addr>
+# @FUNCTION: create_transaction
+# @USAGE: <tx-out-file> <tx_in> <addr> <amount> <change_addr> [datum]
 # @DESCRIPTION:
 # Create a transaction for a plutus script.
-create_script_transaction() {
-	[ "$#" -lt 6 ] && die "error: not enough arguments to create_script_transaction (expexted 6)"
+create_transaction() {
+	[ "$#" -lt 5 ] && die "error: not enough arguments to create_transaction (expexted 5)"
 
     tmp_dir=$(mktempdir)
     { [ -z "${tmp_dir}" ] || ! [ -d "${tmp_dir}" ] ; } && die "Failed to create temporary directory"
@@ -385,14 +436,14 @@ create_script_transaction() {
 	tx_in=$2
 	burn_addr=$3
 	burn_amount=$4
-	burn_datum=$5
-	change_addr=$6
+	change_addr=$5
+	burn_datum=$6
 
 	edo cardano-cli transaction build \
 		--alonzo-era \
 		--tx-in "$tx_in" \
 		--tx-out "$burn_addr+$burn_amount" \
-		--tx-out-datum-hash "$burn_datum" \
+		$([ -n "$burn_datum" ] && echo "--tx-out-datum-hash=$burn_datum") \
 		--change-address "$change_addr" \
 		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}") \
 		--protocol-params-file "${tmp_dir}/pparams.json" \
@@ -408,35 +459,35 @@ create_script_transaction() {
 # @DESCRIPTION:
 # Create a transaction for a plutus script.
 redeem_script_transaction() {
-	[ "$#" -lt 7 ] && die "error: not enough arguments to redeem_script_transaction (expexted 7)"
+       [ "$#" -lt 7 ] && die "error: not enough arguments to redeem_script_transaction (expexted 7)"
 
     tmp_dir=$(mktempdir)
     { [ -z "${tmp_dir}" ] || ! [ -d "${tmp_dir}" ] ; } && die "Failed to create temporary directory"
 
-	gen_protocol_parameters "${tmp_dir}/pparams.json"
+       gen_protocol_parameters "${tmp_dir}/pparams.json"
 
-	tx_out=$1
-	tx_in=$2
-	script_file=$3
-	datum_value=$4
-	redeemer_value=$5
-	tx_in_collateral=$6
-	change_address=$7
+       tx_out=$1
+       tx_in=$2
+       script_file=$3
+       datum_value=$4
+       redeemer_value=$5
+       tx_in_collateral=$6
+       change_address=$7
 
-	edo cardano-cli transaction build \
-		--alonzo-era \
-		--tx-in "$tx_in" \
-		--tx-in-script-file "$script_file" \
-		--tx-in-datum-value "$datum_value" \
-		--tx-in-redeemer-value "$redeemer_value" \
-		--tx-in-collateral "$tx_in_collateral" \
-		--change-address "$change_address" \
-		--protocol-params-file "${tmp_dir}/pparams.json" \
-		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}") \
-		--out-file "$tx_out"
+       edo cardano-cli transaction build \
+               --alonzo-era \
+               --tx-in "$tx_in" \
+               --tx-in-script-file "$script_file" \
+               --tx-in-datum-value "$datum_value" \
+               --tx-in-redeemer-value "$redeemer_value" \
+               --tx-in-collateral "$tx_in_collateral" \
+               --change-address "$change_address" \
+               --protocol-params-file "${tmp_dir}/pparams.json" \
+               $([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}") \
+               --out-file "$tx_out"
 
     [ -e "${tmp_dir}" ] && rm -r "${tmp_dir}"
-	unset tx_out tx_in script_file datum_value redeemer_value tx_in_collateral change_address
+    unset tx_out tx_in script_file datum_value redeemer_value tx_in_collateral change_address
 }
 
 # TODO: use wallet API
@@ -533,13 +584,10 @@ bootstrap_wallet() {
 	(>&2 echo "Press enter to proceed")
 	read -r foo 2>&1
 
-	create_keys \
+	create_priv_keys \
 		"${state_dir}/root.prv" \
 		"${state_dir}/acct.prv" \
 		"${state_dir}/acct.pub" \
-		"${state_dir}/addr.prv" \
-		"${state_dir}/key.skey" \
-		"${state_dir}/key.vkey" \
 		"$2" 2>&1
 
 	(>&2 printf "Your wallet id is: ")
@@ -548,7 +596,7 @@ bootstrap_wallet() {
 }
 
 # @FUNCTION: burn_funds
-# @USAGE: <state-dir> <wallet-id> <commitment> <amount>
+# @USAGE: <state-dir> <wallet-id> <ascii-commitment> <amount>
 # @DESCRIPTION:
 # Burn funds.
 # @STDOUT: UTxO of the burn script
@@ -572,7 +620,7 @@ validate_burn() {
 }
 
 # @FUNCTION: lock_funds
-# @USAGE: <state-dir> <wallet-id> <commitment> <amount>
+# @USAGE: <state-dir> <wallet-id> <sha3_256-hashed-commitment> <amount>
 # @DESCRIPTION:
 # Burn funds.
 # @STDOUT: UTxO of the plutus script
@@ -585,11 +633,27 @@ lock_funds() {
 	[ -e "result.plutus" ] || die "Plutus script doesn't exist at result.plutus"
 	script_address "${state_dir}/burn.addr" "result.plutus" 2>&1
 
-	edo payment_address "${state_dir}/key.vkey" "${state_dir}/payment.addr"
 	datum_hash "$3" > "${state_dir}/burn_hash.txt" || die
 
-	json=$(coin_selection "$2" "$(cat "${state_dir}/burn.addr")" "$4")
-	echo $json
+	send_funds "${state_dir}" "$2" "$(cat "${state_dir}/burn.addr")" "$4" "$(cat "${state_dir}/burn_hash.txt")"
+
+	#rm -f "${state_dir}/burn_hash.txt"
+}
+
+# @FUNCTION: send_funds
+# @USAGE: <state-dir> <wallet-id> <addr> <amount> [commitment]
+# @DESCRIPTION:
+# Burn funds.
+# @STDOUT: UTxO of the plutus script
+send_funds() {
+	[ "$#" -lt 4 ] && die "error: not enough arguments to send_funds (expexted 4)"
+
+	state_dir=$1
+	[ -e "${state_dir}" ] || die "state_dir doesn't exist!"
+
+	edo payment_address "${state_dir}/key.vkey" "${state_dir}/payment.addr"
+
+	json=$(coin_selection "$2" "$3" "$4")
 	[ -n "${json}" ] || die "Could not perform coin selection"
 	# TODO: we just pick the first transaction
 	tx_hash=$(echo "$json" | jq -e -r '.inputs | .[0].id')
@@ -598,29 +662,47 @@ lock_funds() {
 	[ -n "${tx_ix}" ] && [ "${tx_ix}" != "null" ] || die "Could not get TxIx"
 	change_address=$(echo "$json" | jq -e -r '.change | .[0].address')
 	[ -n "${change_address}" ] && [ "${change_address}" != "null" ] || die "Could not get change address"
+	derivation_path=$(echo "$json" | jq -e -r '.inputs | .[0] | .derivation_path | join("/")')
+	[ -n "${derivation_path}" ] && [ "${derivation_path}" != "null" ] || die "Could not get derivation path"
 
-	edo create_script_transaction \
+	create_svkeys \
+		"${state_dir}/root.prv" \
+		"${state_dir}/key.skey" \
+		"${state_dir}/key.vkey" \
+		"${derivation_path}"
+
+	edo create_transaction \
 		"${state_dir}/tx.raw" \
 		"${tx_hash}#${tx_ix}" \
-		"$(cat "${state_dir}/burn.addr")" \
+		"$3" \
 		"$4" \
-		"$(cat "${state_dir}/burn_hash.txt")" \
-		"${change_address}"
+		"${change_address}" \
+		$([ -n "$5" ] && echo "$5")
 
 	edo sign_transaction "${state_dir}/tx.raw" "${state_dir}/key.skey" "${state_dir}/tx.sign"
 	edo submit_transaction "${state_dir}/tx.sign"
 
-	(>&2 echo "Wait a while for the transaction to succeed, then press enter")
-	read -r foo
+	while true
+	do
+		utxo=$(get_utxo "$3")
+		if [ "`echo "$utxo" | jq -e -r '.status_code' 2>/dev/null`" = "404" ] ; then
+			if ! ask_for_confirmation "Couldn't get UTxO yet, try again?" ; then
+				break
+			fi
+		else
+			echo "$utxo"
+			break
+		fi
+		sleep 1
+	done
 
-	get_utxo "$(cat "${state_dir}/burn.addr")"
 
-	rm -f "${state_dir}/burn_hash.txt" "${state_dir}/payment.addr" "${state_dir}/tx.raw" "${state_dir}/tx.sign"
-	unset foo
+	# rm -f "${state_dir}/payment.addr" "${state_dir}/tx.raw" "${state_dir}/tx.sign"
+	unset json tx_hash tx_ix change_address derivation_path state_dir utxo
 }
 
 # @FUNCTION: redeem_funds
-# @USAGE: <state-dir> <wallet-id> <TxHash> <TxIx> <datum>
+# @USAGE: <state-dir> <wallet-id> <TxHash> <TxIx> <sha3_256-hashed-commitment>
 # @DESCRIPTION:
 # Redeem funds.
 redeem_funds() {
@@ -640,6 +722,14 @@ redeem_funds() {
 	[ -n "${tx_ix}" ] && [ "${tx_ix}" != "null" ] || die "Could not get TxIx"
 	change_address=$(echo "$json" | jq -e -r '.change | .[0].address')
 	[ -n "${change_address}" ] && [ "${change_address}" != "null" ] || die "Could not get change address"
+	derivation_path=$(echo "$json" | jq -e -r '.inputs | .[0] | .derivation_path | join("/")')
+	[ -n "${derivation_path}" ] && [ "${derivation_path}" != "null" ] || die "Could not get derivation path"
+
+	create_svkeys \
+		"${state_dir}/root.prv" \
+		"${state_dir}/key.skey" \
+		"${state_dir}/key.vkey" \
+		"${derivation_path}"
 
 	edo redeem_script_transaction \
 		"${state_dir}/tx.raw" \
@@ -653,13 +743,22 @@ redeem_funds() {
 	edo sign_transaction "${state_dir}/tx.raw" "${state_dir}/key.skey" "${state_dir}/tx.sign"
 	edo submit_transaction "${state_dir}/tx.sign"
 
-	(>&2 echo "Wait a while for the transaction to succeed, then press enter")
-	read -r foo
+	while true
+	do
+		utxo=$(get_utxo "$(cat "${state_dir}/burn.addr")")
+		if [ "`echo "$utxo" | jq -e -r '.status_code' 2>/dev/null`" = "404" ] ; then
+			if ! ask_for_confirmation "Couldn't get UTxO yet, try again?" ; then
+				break
+			fi
+		else
+			echo "$utxo"
+			break
+		fi
+		sleep 1
+	done
 
-	get_utxo "$(cat "${state_dir}/burn.addr")"
-
-	rm -f "${state_dir}/burn_hash.txt" "${state_dir}/payment.addr" "${state_dir}/tx.raw" "${state_dir}/tx.sign"
-	unset foo
+	# rm -f "${state_dir}/burn_hash.txt" "${state_dir}/payment.addr" "${state_dir}/tx.raw" "${state_dir}/tx.sign"
+	unset json tx_hash tx_ix change_address derivation_path state_dir utxo
 }
 
 

@@ -2,3 +2,12 @@ cradle:
   cabal:
     - path: "./src"
       component: "lib:proof-of-burn"
+
+    - path: "././app/plutus-burner/Main.hs"
+      component: "proof-of-burn:exe:plutus-burner"
+
+    - path: "././app/plutus-fake-address/Main.hs"
+      component: "proof-of-burn:exe:plutus-fake-address"
+
+    - path: "./test"
+      component: "proof-of-burn:test:plutus-burner-tests"

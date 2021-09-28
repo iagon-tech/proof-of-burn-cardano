@@ -1,6 +1,10 @@
 # Proof of burn
 
-## Running in playground
+## Smart contract version
+
+This is an implementation of proof of burn utilizing smart contracts.
+
+### Running in playground
 
 Build the playground:
 
@@ -12,7 +16,7 @@ Build the playground:
 
 Then copy paste `ProofOfBurn.hs` and compile and evaluate.
 
-## Trying on testnet
+### Trying on testnet
 
 1. Build plutus script
 
@@ -60,6 +64,53 @@ scripts/cardano-cli.sh 'wallet.sh get_utxo $(cat out/burn.addr)' | jq -r .
 # use txhash/txix from previous step
 scripts/cardano-cli.sh \
 	'wallet.sh redeem_funds <wallet-id> <txhash> <txix> <datum>'
+```
+
+## UTxO version with fake address
+
+This is an implementation of proof of burn utilizing fake addresses.
+
+###
+
+1. Build fake address app
+
+```sh
+export NETWORK=testnet
+curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
+source ~/.ghcup/env
+cabal build plutus-fake-address
+```
+
+2. Starting node and wallet:
+
+```sh
+mkdir out/
+export BLOCKFROST_API_TOKEN=GEmb2Wb6DeofbG037CoQk57siNEQsahS
+docker-compose up -d
+docker-compose run cardano-wallet \
+	sh -c 'chmod 777 /ipc/node.socket'
+```
+
+3. Creating/restoring a wallet
+
+```sh
+scripts/cardano-cli.sh 'wallet.sh bootstrap_wallet <mnemonic sentence phrase> <password>'
+```
+
+4. Burn funds
+
+```sh
+# keep the output address
+cabal run plutus-fake-address -- "mysecret"
+# insert address
+scripts/cardano-cli.sh 'wallet.sh send_funds out/ <wallet-id> <fake-address> <amount>'
+```
+
+5. Verify burn
+
+```sh
+# insert address
+scripts/cardano-cli.sh 'wallet.sh get_utxo <fake-address> | jq .'
 ```
 
 ## Resources

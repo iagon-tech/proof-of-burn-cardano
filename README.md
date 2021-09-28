@@ -70,7 +70,7 @@ scripts/cardano-cli.sh \
 
 This is an implementation of proof of burn utilizing fake addresses.
 
-###
+### Trying on testnet
 
 1. Build fake address app
 

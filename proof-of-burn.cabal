@@ -41,7 +41,7 @@ library
   ghc-options:         -Wall -fobject-code -fno-ignore-interface-pragmas -fno-omit-interface-pragmas -fno-strictness -fno-spec-constr -fno-specialise
 
 executable plutus-burner
-  main-is:              Main.hs
+  main-is:              app/plutus-burner/Main.hs
   ghc-options:          -threaded -rtsopts "-with-rtsopts=-T"
 
   build-depends:        cardano-api
@@ -51,6 +51,20 @@ executable plutus-burner
                       , proof-of-burn
                       , plutus-ledger-api
                       , bytestring
+
+executable plutus-fake-address
+  main-is:              app/plutus-fake-address/Main.hs
+  ghc-options:          -threaded -rtsopts "-with-rtsopts=-T"
+
+  build-depends:        cardano-api
+                      , base ^>=4.14.1.0
+                      , bytestring
+                      , cardano-ledger-core
+                      , cardano-crypto-class
+                      , shelley-spec-ledger
+                      , cardano-binary
+                      , text
+                      , unix
 
 test-suite plutus-burner-tests
   import: common-extensions

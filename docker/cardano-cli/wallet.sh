@@ -7,11 +7,9 @@
 : "${BLOCKFROST_MAINNET_URL:=https://cardano-mainnet.blockfrost.io}"
 : "${BLOCKFROST_API_TOKEN}"
 
-
-
-   #######################
-   ## Utility functions ##
-   #######################
+#######################
+## Utility functions ##
+#######################
 
 # @FUNCTION: ask_for_confirmation
 # @USAGE: [confirmation-msg]
@@ -19,22 +17,22 @@
 # Asks the user for confirmation and returns 0 for yes, 1 for no.
 # @RETURN: 0 if user confirmed, 1 otherwise
 ask_for_confirmation() {
-    confirmation_msg=$1
+	confirmation_msg=$1
 
-    if [ -n "${confirmation_msg}" ] ; then
-        printf "%s\\n(y/n and press Enter)\\n" "${confirmation_msg}"
-    else
-        printf "Confirm action: (y/n and press Enter)\\n"
-    fi
-    read -r answer
+	if [ -n "${confirmation_msg}" ]; then
+		printf "%s\\n(y/n and press Enter)\\n" "${confirmation_msg}"
+	else
+		printf "Confirm action: (y/n and press Enter)\\n"
+	fi
+	read -r answer
 
-    if [ "${answer}" != "${answer#[Yy]}" ] ;then
-        return 0
-    else
-        return 1
-    fi
+	if [ "${answer}" != "${answer#[Yy]}" ]; then
+		return 0
+	else
+		return 1
+	fi
 
-    unset confirmation_msg answer
+	unset confirmation_msg answer
 }
 
 # @FUNCTION: die
@@ -43,8 +41,8 @@ ask_for_confirmation() {
 # Exits the shell script with status code 2
 # and prints the given message in red to STDERR, if any.
 die() {
-    (>&2 red_message "$1")
-    exit 2
+	(red_message >&2 "$1")
+	exit 2
 }
 
 # @FUNCTION: edo
@@ -53,9 +51,8 @@ die() {
 # Executes the given command. Also prints what
 # command that is (in blue) if verbosity is enabled.
 # Exits with status code 2 if the command failed.
-edo()
-{
-    "$@" || exit 2
+edo() {
+	"$@" || exit 2
 }
 
 # @FUNCTION: status_message
@@ -63,7 +60,7 @@ edo()
 # @DESCRIPTION:
 # Print a green status message.
 status_message() {
-    printf "\\033[0;32m%s\\033[0m\\n" "$1"
+	printf "\\033[0;32m%s\\033[0m\\n" "$1"
 }
 
 # @FUNCTION: warning_message
@@ -71,7 +68,7 @@ status_message() {
 # @DESCRIPTION:
 # Print a yellow warning message.
 warning_message() {
-    printf "\\033[1;33m%s\\033[0m\\n" "$1"
+	printf "\\033[1;33m%s\\033[0m\\n" "$1"
 }
 
 # @FUNCTION: red_message
@@ -79,7 +76,7 @@ warning_message() {
 # @DESCRIPTION:
 # Print a red message.
 red_message() {
-    printf "\\033[0;31m%s\\033[0m\\n" "$1"
+	printf "\\033[0;31m%s\\033[0m\\n" "$1"
 }
 
 # @FUNCTION: mktempdir
@@ -87,12 +84,12 @@ red_message() {
 # Makes a temporary directory.
 mktempdir() {
 	case "$(uname -s)" in
-        "Darwin"|"darwin")
-			mktemp -d -t wallet.XXXXXXX
-			;;
-		*)
-			mktemp -d
-			;;
+	"Darwin" | "darwin")
+		mktemp -d -t wallet.XXXXXXX
+		;;
+	*)
+		mktemp -d
+		;;
 	esac
 }
 
@@ -102,7 +99,7 @@ mktempdir() {
 # Converts an ascii string to uppercase hex string (no leading  '0x').
 # @STDOUT: The converted to hex string
 to_hex() {
-    [ -z "$1" ] && die "Error: no argument given to to_hex"
+	[ -z "$1" ] && die "Error: no argument given to to_hex"
 	xxd -p <<EOF
 $1
 EOF
@@ -114,7 +111,7 @@ EOF
 # Converts a hex string to an ascii string.
 # @STDOUT: The converted to ascii string
 from_hex() {
-    [ -z "$1" ] && die "Error: no argument given to from_hex"
+	[ -z "$1" ] && die "Error: no argument given to from_hex"
 	xxd -p -r <<EOF
 $1
 EOF
@@ -127,12 +124,12 @@ EOF
 # @STDOUT: The hex string with last bit flipped.
 flip_last_bit() {
 	export BC_LINE_LENGTH=0
-    [ -z "$1" ] && die "Error: no argument given to flip_last_bit"
+	[ -z "$1" ] && die "Error: no argument given to flip_last_bit"
 	_binary=$(echo "obase=2; ibase=16; $(echo "$1" | tr 'a-f' 'A-F')" | bc)
 	_prefix=$(printf "%s" "$_binary" | head -c -1)
 	_tail=$(printf "%s" "$_binary" | tail -c 1)
 	# shellcheck disable=SC2004
-	_tail_flipped=$(( $_tail ^ 1 ))
+	_tail_flipped=$(($_tail ^ 1))
 	echo "obase=16; ibase=2; ${_prefix}${_tail_flipped}" | bc | tr 'A-F' 'a-f'
 
 	unset _binary _prefix _tail _tail_flipped
@@ -144,7 +141,7 @@ flip_last_bit() {
 # Hash a string with sha3-256 in hex format.
 # @STDOUT: The hashed string.
 sha3_256() {
-    [ -z "$1" ] && die "Error: no argument given to sha3_256"
+	[ -z "$1" ] && die "Error: no argument given to sha3_256"
 	printf "%s" "$1" | openssl dgst -r -sha3-256 | awk '{ print $1 }'
 }
 
@@ -154,7 +151,7 @@ sha3_256() {
 # Get the datum hash of a string in hex format.
 # @STDOUT: The hashed string.
 datum_hash() {
-    [ -z "$1" ] && die "Error: no argument given to datum_hash"
+	[ -z "$1" ] && die "Error: no argument given to datum_hash"
 	cardano-cli transaction hash-script-data --script-data-value "\"$1\""
 }
 
@@ -164,17 +161,14 @@ datum_hash() {
 # Converts burn commitment to a full datum hash ready to be submitted
 # in a transaction.
 # @STDOUT: The hashed string.
-to_burn_datum_hash(){
-    [ -z "$1" ] && die "Error: no argument given to to_burn_datum_hash"
+to_burn_datum_hash() {
+	[ -z "$1" ] && die "Error: no argument given to to_burn_datum_hash"
 	datum_hash "$(flip_last_bit "$(sha3_256 "$1")")"
 }
 
-
-
-   ######################
-   ## Wallet functions ##
-   ######################
-
+######################
+## Wallet functions ##
+######################
 
 # @FUNCTION: create_wallet
 # @USAGE: <wallet-name> <mnemonic-sentence> <passphrase>
@@ -184,10 +178,10 @@ to_burn_datum_hash(){
 create_wallet() {
 	[ "$#" -lt 3 ] && die "error: not enough arguments to create_wallet (expexted 3)"
 
-	cat <<EOF > /tmp/payload
+	cat <<EOF >/tmp/payload
   {
 	"name": "$1",
-	"mnemonic_sentence": $(printf "%s" "$2" | jq -R -s  'split(" ")')
+	"mnemonic_sentence": $(printf "%s" "$2" | jq -R -s 'split(" ")')
 	,
 	"passphrase": "$3",
 	"address_pool_gap": 20
@@ -225,7 +219,7 @@ first_wallet_id() {
 # Gets all addresses of a wallet.
 # STDOUT: Response JSON, see https://input-output-hk.github.io/cardano-wallet/api/edge/#operation/listAddresses
 addresses() {
-    [ -z "$1" ] && die "Error: no argument given to addresses"
+	[ -z "$1" ] && die "Error: no argument given to addresses"
 
 	curl -s -X GET "${WALLET_URL}/v2/wallets/$1/addresses"
 }
@@ -236,7 +230,7 @@ addresses() {
 # Gets all unused payment addresses of a wallet.
 # STDOUT: Response JSON, see https://input-output-hk.github.io/cardano-wallet/api/edge/#operation/listAddresses
 unused_payment_adresses() {
-    [ -z "$1" ] && die "Error: no argument given to unused_payment_adresses"
+	[ -z "$1" ] && die "Error: no argument given to unused_payment_adresses"
 
 	addresses "$1" | jq -r '[.[] | select( .state | contains("unused"))]'
 }
@@ -247,7 +241,7 @@ unused_payment_adresses() {
 # Get the first unused payment address of a wallet.
 # STDOUT: bech32 payment address as a string
 first_unused_payment_address() {
-    [ -z "$1" ] && die "Error: no argument given to first_unused_payment_address"
+	[ -z "$1" ] && die "Error: no argument given to first_unused_payment_address"
 
 	unused_payment_adresses "$1" | jq -r '.[0].id'
 }
@@ -258,7 +252,7 @@ first_unused_payment_address() {
 # Get the wallet.
 # STDOUT: Response JSON, see https://input-output-hk.github.io/cardano-wallet/api/edge/#operation/getWallet
 wallet() {
-    [ -z "$1" ] && die "Error: no argument given to wallet"
+	[ -z "$1" ] && die "Error: no argument given to wallet"
 
 	curl -s -X GET "${WALLET_URL}/v2/wallets/$1"
 }
@@ -269,25 +263,21 @@ wallet() {
 # Get the available funds of a wallet.
 # STDOUT: total available funds in lovelace
 available_funds() {
-    [ -z "$1" ] && die "Error: no argument given to available_funds"
+	[ -z "$1" ] && die "Error: no argument given to available_funds"
 
 	edo wallet "$1" | jq -r '.balance.available.quantity'
 }
 
-
-
-
-   ########################
-   ## Blockchain queries ##
-   ########################
-
+########################
+## Blockchain queries ##
+########################
 
 # @FUNCTION: get_utxo
 # @USAGE: <address>
 # @DESCRIPTION:
 # Get UTxO by address.
 get_utxo() {
-    [ -z "$1" ] && die "Error: no argument given to get_utxo"
+	[ -z "$1" ] && die "Error: no argument given to get_utxo"
 
 	[ -n "${BLOCKFROST_API_TOKEN}" ] || die "BLOCKFROST_API_TOKEN not set"
 
@@ -295,14 +285,9 @@ get_utxo() {
 		"$([ "$NETWORK" = "testnet" ] && echo ${BLOCKFROST_TESTNET_URL} || echo ${BLOCKFROST_MAINNET_URL})/api/v0/addresses/$1/utxos"
 }
 
-
-
-
-
-   ############################
-   ## Creating a transaction ##
-   ############################
-
+############################
+## Creating a transaction ##
+############################
 
 # TODO: use wallet API
 # @FUNCTION: create_priv_keys
@@ -319,12 +304,12 @@ create_priv_keys() {
 	acct_pub_file=$1
 	shift
 
-	edo echo "$@" \
-		   | cardano-address key from-recovery-phrase Shelley > "$root_prv_out_file"
-	edo cat "$root_prv_out_file" \
-		   | cardano-address key child 1852H/1815H/0H \
-		   | tee "$acct_prv_out_file" \
-		   | cardano-address key public --with-chain-code > "$acct_pub_file"
+	edo echo "$@" |
+		cardano-address key from-recovery-phrase Shelley >"$root_prv_out_file"
+	edo cat "$root_prv_out_file" |
+		cardano-address key child 1852H/1815H/0H |
+		tee "$acct_prv_out_file" |
+		cardano-address key public --with-chain-code >"$acct_pub_file"
 
 	unset root_prv_out_file acct_prv_out_file acct_pub_file
 }
@@ -341,15 +326,15 @@ create_svkeys() {
 	skey_out_file=$2
 	vkey_out_file=$3
 
-    tmp_dir=$(mktempdir)
-    { [ -z "${tmp_dir}" ] || ! [ -d "${tmp_dir}" ] ; } && die "Failed to create temporary directory"
-	edo cat "$root_prv_in_file" \
-		   | cardano-address key child "$4" > "${tmp_dir}/addr.prv"
+	tmp_dir=$(mktempdir)
+	{ [ -z "${tmp_dir}" ] || ! [ -d "${tmp_dir}" ]; } && die "Failed to create temporary directory"
+	edo cat "$root_prv_in_file" |
+		cardano-address key child "$4" >"${tmp_dir}/addr.prv"
 
 	edo cardano-cli key convert-cardano-address-key --shelley-payment-key --signing-key-file "${tmp_dir}/addr.prv" --out-file "$skey_out_file"
 	edo cardano-cli key verification-key --signing-key-file "$skey_out_file" --verification-key-file "$vkey_out_file"
 
-    [ -e "${tmp_dir}" ] && rm -r "${tmp_dir}"
+	[ -e "${tmp_dir}" ] && rm -r "${tmp_dir}"
 	unset skey_out_file vkey_out_file root_prv_in_file tmp_dir
 }
 
@@ -364,17 +349,17 @@ get_pubkey_hash() {
 
 	root_prv_in_file=$1
 
-    tmp_dir=$(mktempdir)
-    { [ -z "${tmp_dir}" ] || ! [ -d "${tmp_dir}" ] ; } && die "Failed to create temporary directory"
-	edo cat "$root_prv_in_file" \
-		   | cardano-address key child "$2" > "${tmp_dir}/addr.prv"
+	tmp_dir=$(mktempdir)
+	{ [ -z "${tmp_dir}" ] || ! [ -d "${tmp_dir}" ]; } && die "Failed to create temporary directory"
+	edo cat "$root_prv_in_file" |
+		cardano-address key child "$2" >"${tmp_dir}/addr.prv"
 
-	edo cat "${tmp_dir}/addr.prv" \
-		| cardano-address key public --with-chain-code > "${tmp_dir}/addr.xvk"
+	edo cat "${tmp_dir}/addr.prv" |
+		cardano-address key public --with-chain-code >"${tmp_dir}/addr.xvk"
 
 	cardano-cli address key-hash --payment-verification-key-file "${tmp_dir}/addr.xvk"
 
-    [ -e "${tmp_dir}" ] && rm -r "${tmp_dir}"
+	[ -e "${tmp_dir}" ] && rm -r "${tmp_dir}"
 	unset skey_out_file vkey_out_file root_prv_in_file tmp_dir
 }
 
@@ -414,12 +399,12 @@ payment_address() {
 # @DESCRIPTION:
 # Get the protocol parameters from the network.
 gen_protocol_parameters() {
-    [ -z "$1" ] && die "Error: no argument given to gen_protocol_parameters"
+	[ -z "$1" ] && die "Error: no argument given to gen_protocol_parameters"
 
 	# shellcheck disable=SC2046
 	edo cardano-cli query protocol-parameters \
 		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}" || echo "--mainnet") \
-		> "$1"
+		>"$1"
 }
 
 # TODO: use wallet API
@@ -430,8 +415,8 @@ gen_protocol_parameters() {
 create_transaction() {
 	[ "$#" -lt 5 ] && die "error: not enough arguments to create_transaction (expexted 5)"
 
-    tmp_dir=$(mktempdir)
-    { [ -z "${tmp_dir}" ] || ! [ -d "${tmp_dir}" ] ; } && die "Failed to create temporary directory"
+	tmp_dir=$(mktempdir)
+	{ [ -z "${tmp_dir}" ] || ! [ -d "${tmp_dir}" ]; } && die "Failed to create temporary directory"
 
 	gen_protocol_parameters "${tmp_dir}/pparams.json"
 
@@ -453,7 +438,7 @@ create_transaction() {
 		--protocol-params-file "${tmp_dir}/pparams.json" \
 		--out-file "$tx_out"
 
-    [ -e "${tmp_dir}" ] && rm -r "${tmp_dir}"
+	[ -e "${tmp_dir}" ] && rm -r "${tmp_dir}"
 	unset tx_out tx_in burn_addr burn_amount burn_datum change_addr tmp_dir
 }
 
@@ -463,36 +448,36 @@ create_transaction() {
 # @DESCRIPTION:
 # Create a transaction for a plutus script.
 redeem_script_transaction() {
-       [ "$#" -lt 7 ] && die "error: not enough arguments to redeem_script_transaction (expexted 7)"
+	[ "$#" -lt 7 ] && die "error: not enough arguments to redeem_script_transaction (expexted 7)"
 
-    tmp_dir=$(mktempdir)
-    { [ -z "${tmp_dir}" ] || ! [ -d "${tmp_dir}" ] ; } && die "Failed to create temporary directory"
+	tmp_dir=$(mktempdir)
+	{ [ -z "${tmp_dir}" ] || ! [ -d "${tmp_dir}" ]; } && die "Failed to create temporary directory"
 
-       gen_protocol_parameters "${tmp_dir}/pparams.json"
+	gen_protocol_parameters "${tmp_dir}/pparams.json"
 
-       tx_out=$1
-       tx_in=$2
-       script_file=$3
-       datum_value=$4
-       redeemer_value=$5
-       tx_in_collateral=$6
-       change_address=$7
+	tx_out=$1
+	tx_in=$2
+	script_file=$3
+	datum_value=$4
+	redeemer_value=$5
+	tx_in_collateral=$6
+	change_address=$7
 
-		# shellcheck disable=SC2046
-       edo cardano-cli transaction build \
-               --alonzo-era \
-               --tx-in "$tx_in" \
-               --tx-in-script-file "$script_file" \
-               --tx-in-datum-value "$datum_value" \
-               --tx-in-redeemer-value "$redeemer_value" \
-               --tx-in-collateral "$tx_in_collateral" \
-               --change-address "$change_address" \
-               --protocol-params-file "${tmp_dir}/pparams.json" \
-               $([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}" || echo "--mainnet") \
-               --out-file "$tx_out"
+	# shellcheck disable=SC2046
+	edo cardano-cli transaction build \
+		--alonzo-era \
+		--tx-in "$tx_in" \
+		--tx-in-script-file "$script_file" \
+		--tx-in-datum-value "$datum_value" \
+		--tx-in-redeemer-value "$redeemer_value" \
+		--tx-in-collateral "$tx_in_collateral" \
+		--change-address "$change_address" \
+		--protocol-params-file "${tmp_dir}/pparams.json" \
+		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}" || echo "--mainnet") \
+		--out-file "$tx_out"
 
-    [ -e "${tmp_dir}" ] && rm -r "${tmp_dir}"
-    unset tx_out tx_in script_file datum_value redeemer_value tx_in_collateral change_address
+	[ -e "${tmp_dir}" ] && rm -r "${tmp_dir}"
+	unset tx_out tx_in script_file datum_value redeemer_value tx_in_collateral change_address
 }
 
 # TODO: use wallet API
@@ -512,7 +497,7 @@ sign_transaction() {
 # @DESCRIPTION:
 # Submit a transaction.
 submit_transaction() {
-    [ -z "$1" ] && die "Error: no argument given to submit_transaction"
+	[ -z "$1" ] && die "Error: no argument given to submit_transaction"
 
 	# shellcheck disable=SC2046
 	edo cardano-cli transaction submit \
@@ -528,7 +513,7 @@ submit_transaction() {
 coin_selection() {
 	[ "$#" -lt 3 ] && die "error: not enough arguments to coin_selection (expexted 3)"
 
-	cat <<EOF > /tmp/payload
+	cat <<EOF >/tmp/payload
 {
   "payments": [
     {
@@ -551,13 +536,9 @@ EOF
 	unset ret
 }
 
-
-
-
-   ####################
-   ## High-level API ##
-   ####################
-
+####################
+## High-level API ##
+####################
 
 # @FUNCTION: bootstrap_wallet
 # @USAGE: <state-dir> <memonic> <passphrase>
@@ -572,22 +553,22 @@ bootstrap_wallet() {
 	[ -e "result.plutus" ] || die "Plutus script doesn't exist at result.plutus"
 
 	_wallet=$(create_wallet "My wallet" "$2" "$3")
-	if [ "$(echo "${_wallet}" | jq -r .code)" = "wallet_already_exists" ] ; then
-		(>&2 echo "Wallet already exists, skipping...")
+	if [ "$(echo "${_wallet}" | jq -r .code)" = "wallet_already_exists" ]; then
+		(echo >&2 "Wallet already exists, skipping...")
 		wallet_id=$(echo "${_wallet}" | jq -r -e .message | sed 's/^.*following id: //' | sed 's/ However.*$//')
 	else
 		wallet_id=$(echo "${_wallet}" | jq -r -e .id)
 	fi
-	
+
 	[ -n "${wallet_id}" ] && [ "${wallet_id}" != "null" ] || die "Could not create wallet"
 	payment_addr=$(first_unused_payment_address "${wallet_id}")
 	[ -n "${payment_addr}" ] || die "Could not get payment address"
-	if [ "$NETWORK" = "testnet" ] ; then
-		(>&2 echo "Apply for faucet funds with the address $payment_addr at https://testnets.cardano.org/en/testnets/cardano/tools/faucet/"	)
+	if [ "$NETWORK" = "testnet" ]; then
+		(echo >&2 "Apply for faucet funds with the address $payment_addr at https://testnets.cardano.org/en/testnets/cardano/tools/faucet/")
 	else
-		(>&2 echo "Make sure you have funds to make transactions")
+		(echo >&2 "Make sure you have funds to make transactions")
 	fi
-	(>&2 echo "Press enter to proceed")
+	(echo >&2 "Press enter to proceed")
 	# shellcheck disable=SC2034
 	read -r foo 2>&1
 
@@ -597,7 +578,7 @@ bootstrap_wallet() {
 		"${state_dir}/acct.pub" \
 		"$2" 2>&1
 
-	(>&2 printf "Your wallet id is: ")
+	(printf >&2 "Your wallet id is: ")
 	echo "$wallet_id"
 	unset _wallet wallet_id _state_dir foo
 }
@@ -622,7 +603,7 @@ validate_burn() {
 	[ -n "${datum}" ] || die "Could not get datum hash"
 	funds=$(get_utxo "$2" | jq --arg h "$datum" -r '[.[] | select(.data_hash ==$h) | .amount | map(.quantity) | map(tonumber)] | flatten | add')
 
-	(>&2 printf "Following amount has been confirmed as burned for the given datum: ")
+	(printf >&2 "Following amount has been confirmed as burned for the given datum: ")
 	echo "$funds"
 }
 
@@ -640,7 +621,7 @@ lock_funds() {
 	[ -e "result.plutus" ] || die "Plutus script doesn't exist at result.plutus"
 	script_address "${state_dir}/burn.addr" "result.plutus" 2>&1
 
-	datum_hash "$3" > "${state_dir}/burn_hash.txt" || die
+	datum_hash "$3" >"${state_dir}/burn_hash.txt" || die
 
 	send_funds "${state_dir}" "$2" "$(cat "${state_dir}/burn.addr")" "$4" "$(cat "${state_dir}/burn_hash.txt")"
 
@@ -690,11 +671,10 @@ send_funds() {
 	edo sign_transaction "${state_dir}/tx.raw" "${state_dir}/key.skey" "${state_dir}/tx.sign"
 	edo submit_transaction "${state_dir}/tx.sign"
 
-	while true
-	do
+	while true; do
 		utxo=$(get_utxo "$3")
-		if [ "$(echo "$utxo" | jq -e -r '.status_code' 2>/dev/null)" = "404" ] ; then
-			if ! ask_for_confirmation "Couldn't get UTxO yet, try again?" ; then
+		if [ "$(echo "$utxo" | jq -e -r '.status_code' 2>/dev/null)" = "404" ]; then
+			if ! ask_for_confirmation "Couldn't get UTxO yet, try again?"; then
 				break
 			fi
 		else
@@ -703,7 +683,6 @@ send_funds() {
 		fi
 		sleep 1
 	done
-
 
 	# rm -f "${state_dir}/payment.addr" "${state_dir}/tx.raw" "${state_dir}/tx.sign"
 	unset json tx_hash tx_ix change_address derivation_path state_dir utxo
@@ -751,11 +730,10 @@ redeem_funds() {
 	edo sign_transaction "${state_dir}/tx.raw" "${state_dir}/key.skey" "${state_dir}/tx.sign"
 	edo submit_transaction "${state_dir}/tx.sign"
 
-	while true
-	do
+	while true; do
 		utxo=$(get_utxo "$(cat "${state_dir}/burn.addr")")
-		if [ "$(echo "$utxo" | jq -e -r '.status_code' 2>/dev/null)" = "404" ] ; then
-			if ! ask_for_confirmation "Couldn't get UTxO yet, try again?" ; then
+		if [ "$(echo "$utxo" | jq -e -r '.status_code' 2>/dev/null)" = "404" ]; then
+			if ! ask_for_confirmation "Couldn't get UTxO yet, try again?"; then
 				break
 			fi
 		else
@@ -769,13 +747,9 @@ redeem_funds() {
 	unset json tx_hash tx_ix change_address derivation_path state_dir utxo
 }
 
-
-
-
-
-   ###################
-   ## Start wrapper ##
-   ###################
+###################
+## Start wrapper ##
+###################
 
 # call arguments verbatim
 "$@"

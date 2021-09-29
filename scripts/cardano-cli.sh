@@ -2,10 +2,10 @@
 
 set -eu
 
-if ! docker ps -q --no-trunc | grep -q "$(docker-compose ps -q cardano-node)" ; then
-	(>&2 echo "Starting docker containers.")
+if ! docker ps -q --no-trunc | grep -q "$(docker-compose ps -q cardano-node)"; then
+	(echo >&2 "Starting docker containers.")
 	docker-compose up --build -d 2>&1
-	(>&2 echo "Waiting a couple seconds...")
+	(echo >&2 "Waiting a couple seconds...")
 	sleep 5
 fi
 

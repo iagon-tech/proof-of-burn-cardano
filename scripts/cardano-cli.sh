@@ -14,7 +14,7 @@ docker-compose run \
 	-w /pwd \
 	-u "$(id -u "${USER}")":"$(id -g "${USER}")" \
 	-e WALLET_URL=http://cardano-wallet:8090 \
-	-e BLOCKFROST_API_TOKEN=${BLOCKFROST_API_TOKEN} \
+	-e BLOCKFROST_API_TOKEN="${BLOCKFROST_API_TOKEN}" \
 	-e "${BLOCKFROST_TESTNET_URL:=https://cardano-testnet.blockfrost.io}" \
 	-e "${BLOCKFROST_MAINNET_URL:=https://cardano-mainnet.blockfrost.io}" \
 	cardano-cli \

@@ -582,6 +582,7 @@ bootstrap_wallet() {
 		(>&2 echo "Make sure you have funds to make transactions")
 	fi
 	(>&2 echo "Press enter to proceed")
+	# shellcheck disable=SC2034
 	read -r foo 2>&1
 
 	create_priv_keys \
@@ -685,7 +686,7 @@ send_funds() {
 	while true
 	do
 		utxo=$(get_utxo "$3")
-		if [ "`echo "$utxo" | jq -e -r '.status_code' 2>/dev/null`" = "404" ] ; then
+		if [ "$(echo "$utxo" | jq -e -r '.status_code' 2>/dev/null)" = "404" ] ; then
 			if ! ask_for_confirmation "Couldn't get UTxO yet, try again?" ; then
 				break
 			fi
@@ -746,7 +747,7 @@ redeem_funds() {
 	while true
 	do
 		utxo=$(get_utxo "$(cat "${state_dir}/burn.addr")")
-		if [ "`echo "$utxo" | jq -e -r '.status_code' 2>/dev/null`" = "404" ] ; then
+		if [ "$(echo "$utxo" | jq -e -r '.status_code' 2>/dev/null)" = "404" ] ; then
 			if ! ask_for_confirmation "Couldn't get UTxO yet, try again?" ; then
 				break
 			fi

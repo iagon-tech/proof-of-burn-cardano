@@ -388,7 +388,7 @@ script_address() {
 
 	edo cardano-cli address build \
 		--payment-script-file "$2" \
-		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}") \
+		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}" || echo "--mainnet") \
 		--out-file "$1"
 }
 
@@ -402,7 +402,7 @@ payment_address() {
 
 	edo cardano-cli address build \
 		--payment-verification-key-file "$1" \
-		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}") \
+		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}" || echo "--mainnet") \
 		--out-file "$2"
 }
 
@@ -415,7 +415,7 @@ gen_protocol_parameters() {
     [ -z "$1" ] && die "Error: no argument given to gen_protocol_parameters"
 
 	edo cardano-cli query protocol-parameters \
-		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}") \
+		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}" || echo "--mainnet") \
 		> "$1"
 }
 
@@ -445,7 +445,7 @@ create_transaction() {
 		--tx-out "$burn_addr+$burn_amount" \
 		$([ -n "$burn_datum" ] && echo "--tx-out-datum-hash=$burn_datum") \
 		--change-address "$change_addr" \
-		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}") \
+		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}" || echo "--mainnet") \
 		--protocol-params-file "${tmp_dir}/pparams.json" \
 		--out-file "$tx_out"
 
@@ -483,7 +483,7 @@ redeem_script_transaction() {
                --tx-in-collateral "$tx_in_collateral" \
                --change-address "$change_address" \
                --protocol-params-file "${tmp_dir}/pparams.json" \
-               $([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}") \
+               $([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}" || echo "--mainnet") \
                --out-file "$tx_out"
 
     [ -e "${tmp_dir}" ] && rm -r "${tmp_dir}"
@@ -510,7 +510,7 @@ submit_transaction() {
     [ -z "$1" ] && die "Error: no argument given to submit_transaction"
 
 	edo cardano-cli transaction submit \
-		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}") \
+		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}" || echo "--mainnet") \
 		--tx-file "$1"
 }
 

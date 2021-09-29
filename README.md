@@ -85,7 +85,7 @@ cabal build plutus-fake-address
 
 ```sh
 mkdir out/
-export BLOCKFROST_API_TOKEN=GEmb2Wb6DeofbG037CoQk57siNEQsahS
+export BLOCKFROST_API_TOKEN=<token>
 docker-compose up -d
 docker-compose run cardano-wallet \
 	sh -c 'chmod 777 /ipc/node.socket'

@@ -386,6 +386,7 @@ get_pubkey_hash() {
 script_address() {
 	[ "$#" -lt 2 ] && die "error: not enough arguments to script_address (expexted 2)"
 
+	# shellcheck disable=SC2046
 	edo cardano-cli address build \
 		--payment-script-file "$2" \
 		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}" || echo "--mainnet") \
@@ -400,6 +401,7 @@ script_address() {
 payment_address() {
 	[ "$#" -lt 2 ] && die "error: not enough arguments to payment_address (expexted 2)"
 
+	# shellcheck disable=SC2046
 	edo cardano-cli address build \
 		--payment-verification-key-file "$1" \
 		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}" || echo "--mainnet") \
@@ -414,6 +416,7 @@ payment_address() {
 gen_protocol_parameters() {
     [ -z "$1" ] && die "Error: no argument given to gen_protocol_parameters"
 
+	# shellcheck disable=SC2046
 	edo cardano-cli query protocol-parameters \
 		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}" || echo "--mainnet") \
 		> "$1"
@@ -439,6 +442,7 @@ create_transaction() {
 	change_addr=$5
 	burn_datum=$6
 
+	# shellcheck disable=SC2046
 	edo cardano-cli transaction build \
 		--alonzo-era \
 		--tx-in "$tx_in" \
@@ -474,6 +478,7 @@ redeem_script_transaction() {
        tx_in_collateral=$6
        change_address=$7
 
+		# shellcheck disable=SC2046
        edo cardano-cli transaction build \
                --alonzo-era \
                --tx-in "$tx_in" \
@@ -509,6 +514,7 @@ sign_transaction() {
 submit_transaction() {
     [ -z "$1" ] && die "Error: no argument given to submit_transaction"
 
+	# shellcheck disable=SC2046
 	edo cardano-cli transaction submit \
 		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}" || echo "--mainnet") \
 		--tx-file "$1"
@@ -672,6 +678,7 @@ send_funds() {
 		"${state_dir}/key.vkey" \
 		"${derivation_path}"
 
+	# shellcheck disable=SC2046
 	edo create_transaction \
 		"${state_dir}/tx.raw" \
 		"${tx_hash}#${tx_ix}" \

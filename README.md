@@ -78,7 +78,7 @@ This is an implementation of proof of burn utilizing fake addresses.
 export NETWORK=testnet
 curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
 source ~/.ghcup/env
-cabal build plutus-fake-address
+cabal build generate-burn-address
 ```
 
 2. Starting node and wallet:
@@ -101,7 +101,7 @@ scripts/cardano-cli.sh 'wallet.sh bootstrap_wallet <mnemonic sentence phrase> <p
 
 ```sh
 # keep the output address
-cabal run plutus-fake-address -- "mysecret"
+cabal run generate-burn-address -- "mysecret"
 # insert address
 scripts/cardano-cli.sh 'wallet.sh send_funds out/ <wallet-id> <fake-address> <amount>'
 ```

@@ -1,7 +1,9 @@
 ---
 title: Proof of Burn
 subtitle: Exploring Cardano in Alonzo era
-author: Michał J. Gajda, and Julian Ospald
+author:
+  - Michał J. Gajda
+  - Julian Ospald
 bibliography: burn.bib
 ---
 
@@ -17,8 +19,9 @@ We take on the challenge by Charles Hoskinson[@hoskinson-youtube] and implement 
 
 # Proof-of-burn and its applications
 
-The burning of cryptocurrencies and crypto tokens is sending them to a wallet that has no access key.
-That makes them irretrievable in a way that the public can verify.
+The burning of cryptocurrencies and crypto tokens is sending them to a black hole address.
+The address with no access key to retrieve funds.
+At the same time, the public can verify that a burn took place, but only by knowing a "secret": the commitment value.
 Proof-of-burn[@proof-of-burn] is a protocol proposed for assuring the burning of funds in a way that is not censorable by the middlemen.
 The burning of blockchain funds may serve to buyback the tokens and boost valuations of the remaining tokens.
 Or it may be used as a proof of commitment in blockchain protocols[@blockchain-protocols].
@@ -39,9 +42,10 @@ Smart contracts may establish transactions between multiple parties
 that are transparent and verifiable.
 Driving factors for the adoption of smart contracts are decentralized financial services [@blockchain-financial-services; @uniswap], and decentralized organizations [@dao].
 
-The smart contract would have three possible actions:
+The smart contract would have four possible actions:
 
-* **burn** -- which sends the funds to an address without a key,
+* **burn** -- which sends the funds to a black hole address with a secret hashed commitment value,
+* **burned** -- that validates that a burn with the given commitment value took place,
 * **lock** -- that sends the funds to an address with a key,
 * **redeem** -- that redeems the funds locked by the **lock**.
 
@@ -55,8 +59,10 @@ type HashOfTargetAddr = BuiltinByteString
 newtype MyDatum = MyDatum { fromMyDatum :: HashOfTargetAddr }
 
 validateSpend :: ValidatorType Burner
-validateSpend (MyDatum addrHash) _myRedeemerValue ScriptContext { scriptContextTxInfo = txinfo } =
-   traceIfFalse "owner has not signed" (addrHash `elem` fmap (sha3_256 . getPubKeyHash) (txInfoSignatories txinfo))
+validateSpend (MyDatum addrHash) _myRedeemerValue
+              ScriptContext { scriptContextTxInfo = txinfo } =
+   traceIfFalse "owner has not signed"
+     (addrHash `elem` fmap (sha3_256 . getPubKeyHash) (txInfoSignatories txinfo))
 ```
 
 In the case of **lock**, the hash may be of our own address.
@@ -73,7 +79,8 @@ burn' (aCommitment, burnedFunds) = do
 ```
 
 Note that `flipCommitment` just flips the least significant bit of a hash:
-```
+
+``` {.haskell}
 flipCommitment :: BuiltinByteString -> BuiltinByteString
 flipCommitment (BuiltinByteString bs) = BuiltinByteString $ do
   case unsnoc bs of
@@ -95,28 +102,55 @@ If you are interested in the code, here is [the repository](https://github.com/i
 
 We can deploy the smart contract to the Cardano Testnet by executing the following.
 
-Now we could make a transaction that is not known to be a `burn` (it may be `lock`),
-and publish the proof that it was the burn afterwards.
+To start a testnet node with our own wallet (you need a mnemonic phrase and a random password), we need:
 
-After you [pull Docker images with the Cardano CLI](https://github.com/iagon-tech/proof-of-burn-cardano/blob/main/README.md#trying-on-testnet) or install it, you can run the following scripts,
-to deploy the contract:
+1. Install Haskell toolchain:
+``` {.sh}
+curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
+source ~/.ghcup/env
+```
+
+Build the Plutus script:
+``` {.sh}
+cabal run plutus-burner -- 42 out/result.plutus
+```
+
+Start the containers with cardano-node and cardano-wallet:
 ``` {.haskell}
--- Julian, please fill in...
+mkdir out/
+export NETWORK=testnet
+export BLOCKFROST_API_TOKEN=<token>
+docker-compose up --build -d
+docker-compose run cardano-wallet \
+	sh -c 'chmod 777 /ipc/node.socket'
+```
+
+
+Finally to restore wallet, this outputs the _wallet-id_ which we need for the following steps:
+If you want a random mnemonic phrase for testing, run `scripts/cardano-cli.sh 'cardano-address recovery-phrase generate'`
+
+``` {.sh}
+scripts/cardano-cli.sh 'wallet.sh bootstrap_wallet <mnemonic sentence phrase> <password>'
 ```
 
 Afterwards you may burn your own money with:
-``` {.haskell}
-scripts/cardano-cli.sh 'wallet.sh get_utxo $(cat out/burn.addr)' | jq -r .
+``` {.sh}
+scripts/cardano-cli.sh 'wallet.sh burn_funds out/ <wallet-id> <commitment> <amount>'
 ```
 
-The verify that it was burned:
-```
+To verify that it was burned:
+``` {.sh}
 scripts/cardano-cli.sh 'wallet.sh validate_burn <commitment> $(cat out/burn.addr)'
 ```
 
-Excellent demonstration... but determined opponent would just deny our contract hash, since it is attached to Redeemer,
-and reject all transactions for this contract.
-Since Cardano has a multitude of distributed miners, we could still submit the transaction to a different miner. But can we do even better...?
+The outside world doesn't know whether this transaction is a burn or a lock. All they know
+is that it's a smart contract.
+
+However, after we publish this script, opponents of the burn may try to compile start
+denying Redeemers that correspond to our Redeemer script hash. That would be some effort,
+but could lead to censoring of our burns.
+
+Can we make it even harder to censor the burn...?
 
 # From a smart contract to wallet script
 

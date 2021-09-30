@@ -52,8 +52,8 @@ executable plutus-burner
                       , plutus-ledger-api
                       , bytestring
 
-executable plutus-fake-address
-  main-is:              app/plutus-fake-address/Main.hs
+executable generate-burn-address
+  main-is:              app/generate-burn-address/Main.hs
   ghc-options:          -threaded -rtsopts "-with-rtsopts=-T"
 
   build-depends:        cardano-api

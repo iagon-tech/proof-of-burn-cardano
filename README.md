@@ -23,7 +23,7 @@ Then copy paste `ProofOfBurn.hs` and compile and evaluate.
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
 source ~/.ghcup/env
-cabal run plutus-burner -- 42 out/result.plutus
+cabal run plutus-burner
 ```
 
 2. Starting node and wallet:

@@ -46,7 +46,7 @@ scripts/cardano-cli.sh 'wallet.sh bootstrap_wallet <mnemonic sentence phrase> <p
 4. Burn funds
 
 ```sh
-scripts/cardano-cli.sh 'wallet.sh burn_funds <wallet-id> <commitment> <amount>'
+scripts/cardano-cli.sh 'wallet.sh burn_funds out/ <wallet-id> <commitment> <amount>'
 ```
 
 5. Validate burn

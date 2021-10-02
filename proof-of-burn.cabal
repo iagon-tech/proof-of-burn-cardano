@@ -57,6 +57,7 @@ test-suite plutus-burner-tests
   type: exitcode-stdio-1.0
   main-is: Main.hs
   hs-source-dirs: test
+  other-modules: UnitTests
   --other-modules:       Spec.Model
   --                   , Spec.ModelWithClose
   --                   , Spec.Trace

@@ -70,9 +70,15 @@ instance ContractModel POBModel where
 
     initialState = POBModel Map.empty
 
-    nextState (Lock wFrom wTo v) = undefined
+    nextState (Lock wFrom wTo v) = do
+        -- do something
+        wait 1
 
-    nextState (Redeem w) = undefined
+    nextState (Redeem w) = do
+        -- do something
+        -- TODO catch exception from wrong `redeem` :-/
+        wait 1
+
 
     perform h _ cmd = case cmd of
         (Lock   wFrom wTo v) -> callEndpoint @"lock"   (h $ POBKey wFrom) (pubKeyHash $ walletPubKey wTo, Ada.lovelaceValueOf v) >> delay 1
@@ -90,7 +96,7 @@ delay :: Int -> EmulatorTrace ()
 delay = void . waitNSlots . fromIntegral
 
 wallets :: [Wallet]
-wallets = [w1, w2]
+wallets = [w1, w2, w3, w4]
 
 genWallet :: Gen Wallet
 genWallet = elements wallets
@@ -110,7 +116,7 @@ tests = testProperty "PoB" prop_POB
 
 
 prop_POB :: Actions POBModel -> Property
-prop_POB = withMaxSuccess 100 . propRunActionsWithOptions
+prop_POB = withMaxSuccess 10 . propRunActionsWithOptions
     (defaultCheckOptions & emulatorConfig .~ EmulatorConfig (Left initDistr) def def)
     instanceSpec
     (const $ pure True)

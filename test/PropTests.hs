@@ -65,13 +65,14 @@ instance ContractModel POBModel where
 
     arbitraryAction _ = oneof $
         [ Lock   <$> genWallet <*> genWallet <*> genNonNeg -- TODO gen any number, even negative and zero
-        , Redeem <$> genWallet
+        -- , Redeem <$> genWallet
         ]
 
     initialState = POBModel Map.empty
 
     nextState (Lock wFrom wTo v) = do
         -- do something
+        withdraw wFrom (Ada.lovelaceValueOf v)
         wait 1
 
     nextState (Redeem w) = do
@@ -102,7 +103,7 @@ genWallet :: Gen Wallet
 genWallet = elements wallets
 
 genNonNeg :: Gen Integer
-genNonNeg = getNonNegative <$> arbitrary
+genNonNeg = (+1) <$> (getNonNegative <$> arbitrary)
 
 
 instanceSpec :: [ContractInstanceSpec POBModel]
@@ -116,7 +117,7 @@ tests = testProperty "PoB" prop_POB
 
 
 prop_POB :: Actions POBModel -> Property
-prop_POB = withMaxSuccess 10 . propRunActionsWithOptions
+prop_POB = withMaxSuccess 1 . propRunActionsWithOptions
     (defaultCheckOptions & emulatorConfig .~ EmulatorConfig (Left initDistr) def def)
     instanceSpec
     (const $ pure True)

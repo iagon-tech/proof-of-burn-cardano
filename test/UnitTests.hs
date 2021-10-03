@@ -38,8 +38,10 @@ contract' = ProofOfBurn.contract
 tests :: TestTree
 tests = testGroup "unit tests"
     [ testLock
+    , testLockTwoTimes
     , testRedeem
     , testLockAndRedeem1
+    , testLockTwiceAndRedeem
     , testBurnAndBurnedTrace1
     , testBurnAndBurnedTrace2
     , testBurnBurnedTraceAndRedeem
@@ -62,6 +64,27 @@ testLock = check "lock"
         void $ Emulator.waitNSlots 2
     -- TODO It seems that `redeem` must filed (or output some warning message).
     --      So implement it and check then
+
+-- | Test `lock` endpoint.
+--
+--   Just call `lock` two times and ensure balance changed.
+testLockTwoTimes :: TestTree
+testLockTwoTimes = check "lock"
+    (     walletFundsChange w1 (Ada.lovelaceValueOf (-50_000_000))
+     .&&. walletFundsChange w2 (Ada.lovelaceValueOf 0)
+     .&&. walletFundsChange w3 (Ada.lovelaceValueOf 0)
+    )
+    do
+        pob1 <- activateContractWallet w1 contract'
+        void $ Emulator.waitNSlots 2
+        callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 20_000_000)
+        void $ Emulator.waitNSlots 2
+        pob2 <- activateContractWallet w1 contract'
+        void $ Emulator.waitNSlots 2
+        callEndpoint @"lock" pob2 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 30_000_000)
+        -- TODO don't work with `pob1`
+        -- callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 30_000_000)
+        void $ Emulator.waitNSlots 2
 
 
 -- | Test `redeem` endpoint.
@@ -100,6 +123,25 @@ testLockAndRedeem1 = check "lock and redeem 1"
         callEndpoint @"redeem" pob2 ()
         void $ Emulator.waitNSlots 2
 
+testLockTwiceAndRedeem :: TestTree
+testLockTwiceAndRedeem  = check "lock twice and redeem"
+    (     walletFundsChange w1 (Ada.lovelaceValueOf (-50_000_000))
+     .&&. walletFundsChange w2 (Ada.lovelaceValueOf ( 50_000_000))
+     .&&. walletFundsChange w3 (Ada.lovelaceValueOf 0)
+    )
+    do
+        pob1 <- activateContractWallet w1 contract'
+        void $ Emulator.waitNSlots 2
+        callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 20_000_000)
+        void $ Emulator.waitNSlots 2
+        pob2 <- activateContractWallet w1 contract'
+        void $ Emulator.waitNSlots 2
+        callEndpoint @"lock" pob2 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 30_000_000)
+        void $ Emulator.waitNSlots 2
+        pob3 <- activateContractWallet w2 contract'
+        void $ Emulator.waitNSlots 2
+        callEndpoint @"redeem" pob3 ()
+        void $ Emulator.waitNSlots 2
 
 -- | Test `burn` and `burnedTrace` endpoints in pair.
 --

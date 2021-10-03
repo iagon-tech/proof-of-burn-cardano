@@ -90,5 +90,7 @@ test-suite plutus-burner-tests
                      , tasty-hunit
                      , tasty-quickcheck
                      , text
+                     , freer-simple
+                     -- , extensible-effects
   if !(impl(ghcjs) || os(ghcjs))
     build-depends: plutus-tx-plugin -any

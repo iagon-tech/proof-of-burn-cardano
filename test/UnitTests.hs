@@ -42,6 +42,7 @@ tests = testGroup "unit tests"
     , testRedeem
     , testLockAndRedeem1
     , testLockAndRedeem2
+    , testLockAndRedeemOurselves
     , testLockTwiceAndRedeem
     , testBurnAndBurnedTrace1
     , testBurnAndBurnedTrace2
@@ -146,7 +147,25 @@ testLockAndRedeem2 = check "lock and redeem 2"
         void $ Emulator.waitNSlots 2
         --
         callEndpoint @"redeem" pob3 ()
+        void $ Emulator.waitNSlots 5
+
+
+-- | Test `lock` and `redeem` ourselves
+--
+--   Lock some value and redeem it in same wallet.
+testLockAndRedeemOurselves :: TestTree
+testLockAndRedeemOurselves = check "lock and redeem ourselves"
+    ( walletFundsChange w1 (Ada.lovelaceValueOf 0)
+    )
+    do
+        h1 <- activateContractWallet w1 contract'
         void $ Emulator.waitNSlots 2
+        --
+        callEndpoint @"lock" h1 (pubKeyHash $ walletPubKey w1, Ada.lovelaceValueOf 50_000_000)
+        void $ Emulator.waitNSlots 5
+        --
+        callEndpoint @"redeem" h1 ()
+        void $ Emulator.waitNSlots 5
 
 
 testLockTwiceAndRedeem :: TestTree

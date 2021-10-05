@@ -121,7 +121,7 @@ burnerSerialised :: PlutusScript PlutusScriptV1
 burnerSerialised = PlutusScriptSerialised burnerSBS
 
 contract :: AsContractError e => Contract w Schema e ()
-contract = selectList [lock, burn, burnedTrace, redeem]
+contract = selectList [lock, burn, burnedTrace, redeem] >> contract
 
 -- | The "lock" contract endpoint.
 --

@@ -41,7 +41,7 @@ tests = testGroup "unit tests"
     , testLockTwoTimes
     , testRedeem
     , testLockAndRedeem1
-    , testLockAndRedeem2
+    -- , testLockAndRedeem2
     , testLockAndRedeemOurselves
     , testLockTwiceAndRedeem
     , testBurnAndBurnedTrace1

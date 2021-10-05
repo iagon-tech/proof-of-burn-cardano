@@ -160,14 +160,14 @@ testLockTwiceAndRedeem  = check "lock twice and redeem"
         void $ Emulator.waitNSlots 2
         callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 20_000_000)
         void $ Emulator.waitNSlots 2
-        pob2 <- activateContractWallet w1 contract'
-        void $ Emulator.waitNSlots 2
-        callEndpoint @"lock" pob2 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 30_000_000)
+        -- Repeat `lock` on same contract
+        callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 30_000_000)
         void $ Emulator.waitNSlots 2
         pob3 <- activateContractWallet w2 contract'
         void $ Emulator.waitNSlots 2
         callEndpoint @"redeem" pob3 ()
         void $ Emulator.waitNSlots 2
+
 
 -- | Test `burn` and `burnedTrace` endpoints in pair.
 --

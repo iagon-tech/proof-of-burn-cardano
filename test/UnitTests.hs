@@ -129,23 +129,22 @@ testLockAndRedeem1 = check "lock and redeem 1"
 --   Lock some value and redeem it in other wallet.
 testLockAndRedeem2 :: TestTree
 testLockAndRedeem2 = check "lock and redeem 2"
-    (     walletFundsChange w1 (Ada.lovelaceValueOf  (  0)) -- TODO why here 50_000_000??
+    (      walletFundsChange w1 (Ada.lovelaceValueOf (  0)) -- TODO why here 50_000_000??
       .&&. walletFundsChange w2 (Ada.lovelaceValueOf (  0))
       .&&. walletFundsChange w3 (Ada.lovelaceValueOf ( -50_000_000))
     )
     do
         pob1 <- activateContractWallet w1 contract'
+        pob2 <- activateContractWallet w3 contract'
+        pob3 <- activateContractWallet w1 contract'
         void $ Emulator.waitNSlots 2
+        --
         callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 50_000_000)
         void $ Emulator.waitNSlots 2
         --
-        pob2 <- activateContractWallet w3 contract'
-        void $ Emulator.waitNSlots 2
         callEndpoint @"lock" pob2 (pubKeyHash $ walletPubKey w1, Ada.lovelaceValueOf 50_000_000)
         void $ Emulator.waitNSlots 2
         --
-        pob3 <- activateContractWallet w1 contract'
-        void $ Emulator.waitNSlots 2
         callEndpoint @"redeem" pob3 ()
         void $ Emulator.waitNSlots 2
 

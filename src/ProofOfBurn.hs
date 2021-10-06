@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE MagicHash                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
@@ -31,20 +32,23 @@
 --  In order to check that value was indeed burned, one needs to run a `burned` script with the same commitment value.
 module ProofOfBurn where 
 
-import           Control.Monad             (void, when)
+import           Control.Monad             (void, when, forM)
+import           Control.Applicative       (liftA3)
 import           Control.Lens              hiding (snoc, unsnoc)
 import           Data.Bits                 (xor)
 import           Data.Char                 (ord, chr)
+import qualified Data.Aeson                as Aeson
 import           Data.Sequences            (snoc, unsnoc)
 import           Data.Maybe                (fromJust, catMaybes)
 import qualified Data.Map.Strict           as Map
 import qualified Data.List.NonEmpty        as NonEmpty(toList)
 import           Plutus.Contract
+import           Plutus.ChainIndex.Client
 import qualified PlutusTx
 import qualified PlutusTx.IsData  as PlutusTx
 import           PlutusTx.Prelude hiding (Applicative (..))
 import           PlutusTx.Builtins.Internal (BuiltinByteString(..))
-import           Ledger                    (Address, Datum(..), scriptAddress)
+import           Ledger                    (Address(..), Datum(..), scriptAddress, datumHash)
 import           Ledger.AddressMap         (UtxoMap)
 import qualified Ledger.Constraints        as Constraints
 import qualified Ledger.Typed.Scripts      as Scripts
@@ -52,12 +56,13 @@ import           Ledger.Typed.Scripts.Validators(ValidatorType)
 import           Ledger.Value              (Value, isZero, valueOf)
 import           Ledger.Tx
 import           Plutus.V1.Ledger.Crypto
+import           Plutus.V1.Ledger.Credential
 import           Plutus.V1.Ledger.Contexts
 import           Plutus.V1.Ledger.Tx (Tx(..), TxOutRef, TxOutTx(..), txData, txOutDatum)
 import qualified Plutus.V1.Ledger.Scripts as Plutus
 import           Playground.Contract
 import qualified Data.Text                as T
-import Wallet.Emulator.Wallet
+import Wallet.Emulator.Wallet hiding (ownPubKey)
 import Ledger.Crypto
 import qualified Prelude
 import qualified Data.ByteString.Short as SBS
@@ -65,6 +70,11 @@ import qualified Data.ByteString.Lazy  as LBS
 import           Codec.Serialise
 import           Cardano.Api.Shelley (PlutusScript (..), PlutusScriptV1)
 import           Plutus.ChainIndex.Tx
+import           Cardano.Prelude ( Set )
+import qualified Data.Set as Set
+import qualified Data.Map.Internal as Map
+
+
 
 -- | Utxo datum holds either:
 --     * the hash of the address that can redeem the value, if it was locked;
@@ -162,10 +172,25 @@ flipCommitment (BuiltinByteString bs) = BuiltinByteString $ do
 --   Can redeem the value, if it was published, not burned.
 redeem :: AsContractError e => Promise w Schema e ()
 redeem = endpoint @"redeem" $ \() -> do
-    unspentOutputs <- utxosAt contractAddress
+    pubk <- ownPubKey
+    unspentOutputs' <- utxosAt contractAddress
+    let relevantOutputs = filterUTxOs unspentOutputs' (filterByPubKey pubk)
     let redeemer = MyRedeemer ()
-        tx       = collectFromScript unspentOutputs redeemer
-    void $ submitTxConstraintsSpending burnerTypedValidator unspentOutputs tx
+        tx       = collectFromScript relevantOutputs redeemer
+    void $ submitTxConstraintsSpending burnerTypedValidator relevantOutputs tx
+ where
+   filterUTxOs ::  Map.Map TxOutRef ChainIndexTxOut
+                -> (ChainIndexTxOut -> Bool)
+                -> Map.Map TxOutRef ChainIndexTxOut
+   filterUTxOs txMap p = flip Map.filter txMap p
+
+   filterByPubKey :: PubKey -> ChainIndexTxOut -> Bool
+   filterByPubKey pubk ScriptChainIndexTxOut{ _ciTxOutDatum = Left (Plutus.DatumHash hash) } =
+     hash == sha3_256 (getPubKeyHash (pubKeyHash pubk))
+   filterByPubKey pubk ScriptChainIndexTxOut{ _ciTxOutDatum = Right (Datum datum) } =
+     let (Just (MyDatum hash)) = PlutusTx.fromBuiltinData datum
+     in hash == sha3_256 (getPubKeyHash (pubKeyHash pubk))
+   filterByPubKey _ _ = False
 
 
 burnedTrace :: AsContractError e => Promise w Schema e ()

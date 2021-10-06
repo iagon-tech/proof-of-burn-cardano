@@ -24,6 +24,7 @@ library
                      , base ^>=4.14.1.0
                      , bytestring
                      , containers
+                     , cardano-prelude
                      , cardano-api
                      , lens
                      , playground-common

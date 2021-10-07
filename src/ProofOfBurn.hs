@@ -57,7 +57,7 @@ import Plutus.Contract
       Contract,
       Promise,
       AsContractError,
-      type (.\/) )
+      type (.\/), ContractError (OtherError) )
 import Plutus.ChainIndex.Client ()
 import qualified PlutusTx
 import qualified PlutusTx.IsData  as PlutusTx
@@ -113,9 +113,8 @@ import Codec.Serialise ( serialise )
 import           Cardano.Api.Shelley (PlutusScript (..), PlutusScriptV1)
 import Plutus.ChainIndex.Tx
     ( ChainIndexTx(ChainIndexTx, _citxData) )
-import           Cardano.Prelude ( Set )
+import           Cardano.Prelude ( Set, MonadError (throwError) )
 import qualified Data.Set as Set
-import qualified Data.Map.Internal as Map
 
 
 
@@ -173,7 +172,7 @@ burnerSBS = SBS.toShort . LBS.toStrict $ serialise burnerScript
 burnerSerialised :: PlutusScript PlutusScriptV1
 burnerSerialised = PlutusScriptSerialised burnerSBS
 
-contract :: AsContractError e => Contract w Schema e ()
+contract :: Contract w Schema ContractError ()
 contract = selectList [lock, burn, burnedTrace, redeem] >> contract
 
 -- | The "lock" contract endpoint.
@@ -213,30 +212,26 @@ flipCommitment (BuiltinByteString bs) = BuiltinByteString $ do
 -- | The "redeem" contract endpoint.
 --
 --   Can redeem the value, if it was published, not burned.
-redeem :: AsContractError e => Promise w Schema e ()
+redeem :: Promise w Schema ContractError ()
 redeem = endpoint @"redeem" $ \() -> do
     pubk <- ownPubKey
-    unspentOutputs' <- utxosAt contractAddress
-    let relevantOutputs = filterUTxOs unspentOutputs' (filterByPubKey pubk)
+    unspentOutputs' <- utxosTxOutTxAt contractAddress
+    let relevantOutputs = Map.map Prelude.fst $ filterUTxOs unspentOutputs' (filterByPubKey pubk)
+    when (Map.null relevantOutputs) $ throwError (OtherError $ T.pack "No UTxO to redeem from")
     let redeemer = MyRedeemer ()
         tx       = collectFromScript relevantOutputs redeemer
     void $ submitTxConstraintsSpending burnerTypedValidator relevantOutputs tx
  where
-   filterUTxOs ::  Map.Map TxOutRef ChainIndexTxOut
-                -> (ChainIndexTxOut -> Bool)
-                -> Map.Map TxOutRef ChainIndexTxOut
+   filterUTxOs ::  Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx)
+                -> ((ChainIndexTxOut, ChainIndexTx) -> Bool)
+                -> Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx)
    filterUTxOs txMap p = flip Map.filter txMap p
 
-   filterByPubKey :: PubKey -> ChainIndexTxOut -> Bool
-   filterByPubKey pubk ScriptChainIndexTxOut{ _ciTxOutDatum = Left (Plutus.DatumHash hash) } =
-     hash == sha3_256 (getPubKeyHash (pubKeyHash pubk))
-   filterByPubKey pubk ScriptChainIndexTxOut{ _ciTxOutDatum = Right (Datum datum) } =
-     let (Just (MyDatum hash)) = PlutusTx.fromBuiltinData datum
-     in hash == sha3_256 (getPubKeyHash (pubKeyHash pubk))
-   filterByPubKey _ _ = False
+   filterByPubKey :: PubKey -> (ChainIndexTxOut, ChainIndexTx) -> Bool
+   filterByPubKey pubk txtpl = fmap fromMyDatum (getMyDatum txtpl) == Just (sha3_256 (getPubKeyHash (pubKeyHash pubk)))
 
 
-burnedTrace :: AsContractError e => Promise w Schema e ()
+burnedTrace :: Promise w Schema ContractError ()
 burnedTrace = endpoint @"burnedTrace" $ \aCommitment -> do
   burnedVal <- burned aCommitment
   if | isZero burnedVal -> logInfo @Prelude.String "Nothing burned with given commitment"
@@ -256,22 +251,22 @@ burned aCommitment = do
     totalValue         = foldOf (folded . _1 . _ScriptChainIndexTxOut . _4)
     -- | Check if the given transaction output is commited to burn with the same hash as `aCommitment`.
     withCommitment    :: (ChainIndexTxOut, ChainIndexTx) -> Bool
-    withCommitment (PublicKeyChainIndexTxOut {}, _) = False
-    withCommitment (ScriptChainIndexTxOut { _ciTxOutDatum = txOutDatumHash }, ChainIndexTx{ _citxData = txData })
-      = burnHash == Just commitmentHash
-      where
-        -- | Extract hash from the Utxo.
-        burnHash  :: Maybe BuiltinByteString
-        burnHash   = do
-          dh            <- either Just (const Nothing) txOutDatumHash
-          Datum d       <- dh `Map.lookup` txData     -- lookup Datum from the hash
-          MyDatum aHash <- PlutusTx.fromBuiltinData d -- Unpack from PlutusTx.Datum type.
-          return           aHash
+    withCommitment txtpl = fmap fromMyDatum (getMyDatum txtpl) == Just commitmentHash
+
     commitmentHash = flipCommitment $ sha3_256 aCommitment
 
 
+getMyDatum :: (ChainIndexTxOut, ChainIndexTx) -> Maybe MyDatum
+getMyDatum (PublicKeyChainIndexTxOut {}, _) = Nothing
+getMyDatum (ScriptChainIndexTxOut { _ciTxOutDatum = Left dh }, ChainIndexTx{ _citxData = txData }) = do
+  Datum d       <- dh `Map.lookup` txData     -- lookup Datum from the hash
+  PlutusTx.fromBuiltinData d                  -- Unpack from PlutusTx.Datum type.
+getMyDatum (ScriptChainIndexTxOut { _ciTxOutDatum = Right (Datum datum) }, _) =
+   PlutusTx.fromBuiltinData datum
+
+
 -- | Script endpoints available for calling the contract.
-endpoints :: Contract () Schema T.Text ()
+endpoints :: Contract () Schema ContractError ()
 endpoints = contract
 
 mkSchemaDefinitions ''Schema

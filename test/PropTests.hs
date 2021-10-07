@@ -27,6 +27,7 @@ import           Data.Maybe                         (isJust, isNothing)
 import           Data.Monoid                        (Last (..))
 import           Data.String                        (IsString (..))
 import           Data.Text                          (Text)
+import           Plutus.Contract                    (ContractError)
 import           Plutus.Contract.Test
 import           Plutus.Contract.Test.ContractModel
 import           Plutus.Trace.Emulator
@@ -70,7 +71,7 @@ instance ContractModel POBModel where
 
     data ContractInstanceKey POBModel w s e where
         -- TODO So we can't use contract twice?? Well, ok, let's use current slot to make new intsance
-        POBKey :: Wallet -> Slot -> ContractInstanceKey POBModel () ProofOfBurn.Schema Text
+        POBKey :: Wallet -> Slot -> ContractInstanceKey POBModel () ProofOfBurn.Schema ContractError
 
     arbitraryAction _ = oneof $
         [ Lock   <$> genWallet <*> genWallet <*> genNonNeg -- TODO gen any number, even negative and zero

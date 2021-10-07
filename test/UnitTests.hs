@@ -50,6 +50,7 @@ tests = testGroup "unit tests"
     , testBurnAndBurnedTrace1
     , testBurnAndBurnedTrace2
     , testBurnBurnedTraceAndRedeem
+    , testLockBurnRedeem
     ]
 
 
@@ -266,6 +267,34 @@ testBurnBurnedTraceAndRedeem = check "burn, burnedTrace and redeem"
   where
     contractErrorPredicate (OtherError "No UTxO to redeem from") = True
     contractErrorPredicate _ = False
+
+-- | Test `lock`, `burn` and `redeem` endpoints in pair, making
+-- sure that a burn doesn't "mess"  with the redeeming.
+testLockBurnRedeem :: TestTree
+testLockBurnRedeem = check "lock, burn and redeem"
+    (      walletFundsChange w1 (Ada.lovelaceValueOf (-80_000_000))
+      .&&. walletFundsChange w2 (Ada.lovelaceValueOf 0)
+      .&&. walletFundsChange w3 (Ada.lovelaceValueOf 30_000_000)
+      .&&. assertInstanceLog (Emulator.walletInstanceTag w2) ((Prelude.elem (burnedLogMsg 50_000_000)) . mapMaybe (preview (eteEvent . cilMessage . _ContractLog)))
+    )
+    do
+        let burnedAddr = pubKeyHash $ walletPubKey w3
+        pob1 <- activateContractWallet w1 contract'
+        void $ Emulator.waitNSlots 2
+        callEndpoint @"burn" pob1 (getPubKeyHash burnedAddr, Ada.lovelaceValueOf 50_000_000)
+        void $ Emulator.waitNSlots 2
+        callEndpoint @"lock" pob1 (burnedAddr, Ada.lovelaceValueOf 30_000_000)
+        void $ Emulator.waitNSlots 2
+        --
+        pob2 <- activateContractWallet w2 contract'
+        void $ Emulator.waitNSlots 2
+        callEndpoint @"burnedTrace" pob2 (getPubKeyHash burnedAddr)
+        void $ Emulator.waitNSlots 2
+        --
+        pob3 <- activateContractWallet w3 contract'
+        void $ Emulator.waitNSlots 2
+        callEndpoint @"redeem" pob3 ()
+        void $ Emulator.waitNSlots 2
 
 
 burnedLogMsg :: Prelude.Int -> JSON.Value

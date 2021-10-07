@@ -34,7 +34,7 @@ module ProofOfBurn where
 
 import           Control.Monad             (void, when, forM)
 import           Control.Applicative       (liftA3)
-import           Control.Lens              hiding (snoc, unsnoc)
+import Control.Lens ( foldOf, folded, Field1(_1), Field4(_4) )
 import           Data.Bits                 (xor)
 import           Data.Char                 (ord, chr)
 import qualified Data.Aeson                as Aeson
@@ -42,11 +42,44 @@ import           Data.Sequences            (snoc, unsnoc)
 import           Data.Maybe                (fromJust, catMaybes)
 import qualified Data.Map.Strict           as Map
 import qualified Data.List.NonEmpty        as NonEmpty(toList)
-import           Plutus.Contract
-import           Plutus.ChainIndex.Client
+import Plutus.Contract
+    ( (>>),
+      logInfo,
+      endpoint,
+      ownPubKey,
+      submitTxConstraints,
+      submitTxConstraintsSpending,
+      utxosAt,
+      utxosTxOutTxAt,
+      collectFromScript,
+      selectList,
+      Endpoint,
+      Contract,
+      Promise,
+      AsContractError,
+      type (.\/) )
+import Plutus.ChainIndex.Client ()
 import qualified PlutusTx
 import qualified PlutusTx.IsData  as PlutusTx
-import           PlutusTx.Prelude hiding (Applicative (..))
+import PlutusTx.Prelude
+    ( otherwise,
+      return,
+      Bool(False),
+      Maybe(..),
+      Either(Right, Left),
+      (.),
+      flip,
+      sha3_256,
+      either,
+      elem,
+      const,
+      ($),
+      traceError,
+      traceIfFalse,
+      BuiltinByteString,
+      Eq((==)),
+      Functor(fmap),
+      Semigroup((<>)) )
 import           PlutusTx.Builtins.Internal (BuiltinByteString(..))
 import           Ledger                    (Address(..), Datum(..), scriptAddress, datumHash)
 import           Ledger.AddressMap         (UtxoMap)
@@ -54,22 +87,32 @@ import qualified Ledger.Constraints        as Constraints
 import qualified Ledger.Typed.Scripts      as Scripts
 import           Ledger.Typed.Scripts.Validators(ValidatorType)
 import           Ledger.Value              (Value, isZero, valueOf)
-import           Ledger.Tx
-import           Plutus.V1.Ledger.Crypto
-import           Plutus.V1.Ledger.Credential
-import           Plutus.V1.Ledger.Contexts
+import Ledger.Tx
+    ( TxOutRef,
+      ChainIndexTxOut(PublicKeyChainIndexTxOut, ScriptChainIndexTxOut,
+                      _ciTxOutDatum),
+      _ScriptChainIndexTxOut,
+      Address )
+import Plutus.V1.Ledger.Crypto
+    ( PubKey, PubKeyHash(getPubKeyHash) )
+import Plutus.V1.Ledger.Credential ()
+import Plutus.V1.Ledger.Contexts
+    ( ScriptContext(ScriptContext, scriptContextTxInfo),
+      TxInfo(txInfoSignatories) )
 import           Plutus.V1.Ledger.Tx (Tx(..), TxOutRef, TxOutTx(..), txData, txOutDatum)
 import qualified Plutus.V1.Ledger.Scripts as Plutus
-import           Playground.Contract
+import Playground.Contract
+    ( mkKnownCurrencies, mkSchemaDefinitions, KnownCurrency )
 import qualified Data.Text                as T
-import Wallet.Emulator.Wallet hiding (ownPubKey)
-import Ledger.Crypto
+import Wallet.Emulator.Wallet ()
+import Ledger.Crypto ( pubKeyHash )
 import qualified Prelude
 import qualified Data.ByteString.Short as SBS
 import qualified Data.ByteString.Lazy  as LBS
-import           Codec.Serialise
+import Codec.Serialise ( serialise )
 import           Cardano.Api.Shelley (PlutusScript (..), PlutusScriptV1)
-import           Plutus.ChainIndex.Tx
+import Plutus.ChainIndex.Tx
+    ( ChainIndexTx(ChainIndexTx, _citxData) )
 import           Cardano.Prelude ( Set )
 import qualified Data.Set as Set
 import qualified Data.Map.Internal as Map

@@ -53,7 +53,7 @@ extra-deps:
 
 # https://github.com/input-output-hk/plutus/releases/tag/plutus-starter-devcontainer%2Fv1.0.9
 - git: https://github.com/input-output-hk/plutus.git
-  commit: plutus-starter-devcontainer/v1.0.9
+  commit: 36e2c8bdbb6e70d25a31331e5cd23f26dc3162d5
   subdirs:
       - freer-extras
       - playground-common

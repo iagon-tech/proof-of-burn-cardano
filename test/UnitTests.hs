@@ -31,7 +31,7 @@ import           ProofOfBurn
 
 -- | Contract instance
 --
-contract' :: Contract () ProofOfBurn.Schema Text ()
+contract' :: Contract () ProofOfBurn.Schema ContractError ()
 contract' = ProofOfBurn.contract
 
 

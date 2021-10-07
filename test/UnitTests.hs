@@ -1,10 +1,12 @@
 {-# LANGUAGE DataKinds             #-}
 {-# LANGUAGE BlockArguments        #-}
+{-# LANGUAGE LambdaCase        #-}
 
 module UnitTests (tests) where
 
 import           Control.Lens
 import           Control.Monad              hiding (fmap)
+import           Data.Semigroup             ((<>))
 import           Control.Monad.Freer.Extras.Log as Log
 import           Data.Default               (Default (..))
 import qualified Data.Map                   as Map
@@ -27,6 +29,7 @@ import           Test.Tasty
 -- import Debug.Trace
 
 import           ProofOfBurn
+import qualified Data.Text                as T
 
 
 -- | Contract instance
@@ -78,14 +81,11 @@ testLockTwoTimes = check "lock"
     )
     do
         pob1 <- activateContractWallet w1 contract'
+
         void $ Emulator.waitNSlots 2
         callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 20_000_000)
         void $ Emulator.waitNSlots 2
-        pob2 <- activateContractWallet w1 contract'
-        void $ Emulator.waitNSlots 2
-        callEndpoint @"lock" pob2 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 30_000_000)
-        -- TODO don't work with `pob1`
-        -- callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 30_000_000)
+        callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 30_000_000)
         void $ Emulator.waitNSlots 2
 
 
@@ -130,7 +130,7 @@ testLockAndRedeem1 = check "lock and redeem 1"
 --   Lock some value and redeem it in other wallet.
 testLockAndRedeem2 :: TestTree
 testLockAndRedeem2 = check "lock and redeem 2"
-    (      walletFundsChange w1 (Ada.lovelaceValueOf (  0)) -- TODO why here 50_000_000??
+    (      walletFundsChange w1 (Ada.lovelaceValueOf (  0))
       .&&. walletFundsChange w2 (Ada.lovelaceValueOf (  0))
       .&&. walletFundsChange w3 (Ada.lovelaceValueOf ( -50_000_000))
     )
@@ -190,12 +190,11 @@ testLockTwiceAndRedeem  = check "lock twice and redeem"
 
 -- | Test `burn` and `burnedTrace` endpoints in pair.
 --
---   Check that PoB can burn value to any string; and can't get trace for this. TODO ???
+--   Check that PoB can burn value to any string; and can't get trace for this.
 testBurnAndBurnedTrace1 :: TestTree
 testBurnAndBurnedTrace1 = check "burn and burnedTrace 1"
     (     walletFundsChange w1 (Ada.lovelaceValueOf (-50_000_000))
-      -- TODO Why not detected??
-     .&&. assertInstanceLog (Emulator.walletInstanceTag w1) ((Prelude.elem expectedLogMsg) . mapMaybe (preview (eteEvent . cilMessage . _ContractLog)))
+     .&&. assertInstanceLog (Emulator.walletInstanceTag w1) ((Prelude.elem (burnedLogMsg 50_000_000)) . mapMaybe (preview (eteEvent . cilMessage . _ContractLog)))
      .&&. assertNoFailedTransactions
     )
     do
@@ -207,29 +206,20 @@ testBurnAndBurnedTrace1 = check "burn and burnedTrace 1"
         pob2 <- activateContractWallet w1 contract'
         callEndpoint @"burnedTrace" pob2 "ab"
         void $ Emulator.waitNSlots 2
-  where
-    expectedLogMsg = JSON.String "Nothing burned with given commitment" -- TODO give from main module
 
 
 -- | Test `burn` and `burnedTrace` endpoints in pair.
 --
---   Check that PoB can burn value to some address; and TODO get trace for this.
+--   Check that PoB can burn value to some address;
 testBurnAndBurnedTrace2 :: TestTree
 testBurnAndBurnedTrace2 = check "burn and burnedTrace 2"
     (     walletFundsChange w1 (Ada.lovelaceValueOf (-50_000_000))
      .&&. walletFundsChange w2 (Ada.lovelaceValueOf 0)
      .&&. walletFundsChange w3 (Ada.lovelaceValueOf 0)
-      -- TODO Why not detected??
-     .&&. assertInstanceLog (Emulator.walletInstanceTag w2) ((Prelude.elem expectedLogMsg) . mapMaybe (preview (eteEvent . cilMessage . _ContractLog)))
+     .&&. assertInstanceLog (Emulator.walletInstanceTag w2) ((Prelude.elem (burnedLogMsg 50_000_000)) . mapMaybe (preview (eteEvent . cilMessage . _ContractLog)))
      .&&. assertNoFailedTransactions
     )
     do
-        -- TODO Here we need public key hash to access to `burnedTrace`
-        --
-        --      But in which form? In which encoding??
-        --
-        --      Script can't find `getPubKeyHash $ pubKeyHash $ walletPubKey w3` 
-        --
         let burnedAddr = getPubKeyHash $ pubKeyHash $ walletPubKey w3
         --Debug.Trace.traceM "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
         --Debug.Trace.traceShowM burnedAddr
@@ -244,34 +234,21 @@ testBurnAndBurnedTrace2 = check "burn and burnedTrace 2"
         void $ Emulator.waitNSlots 2
         callEndpoint @"burnedTrace" pob2 burnedAddr
         void $ Emulator.waitNSlots 2
-  where
-    expectedLogMsg = JSON.String "Nothing burned with given commitment" -- TODO give from main module TODO Actually "Value burned with given commitment: ..."
 
 
 -- | Test `burn`, `burnedTrace`, `redeem` endpoints in pair.
 --
---   Check that PoB can burn value to some address; and TODO get trace for this. Redeem of that value is not possible.
+--   Check that PoB can burn value to some address. Redeem of that value is not possible.
 testBurnBurnedTraceAndRedeem :: TestTree
 testBurnBurnedTraceAndRedeem = check "burn, burnedTrace and redeem"
     (      walletFundsChange w1 (Ada.lovelaceValueOf (-50_000_000))
       .&&. walletFundsChange w2 (Ada.lovelaceValueOf 0)
       .&&. walletFundsChange w3 (Ada.lovelaceValueOf 0)
-      -- TODO Why not detected??
-      .&&. assertInstanceLog (Emulator.walletInstanceTag w2) ((Prelude.elem expectedLogMsg) . mapMaybe (preview (eteEvent . cilMessage . _ContractLog)))
-      .&&. Test.not assertNoFailedTransactions -- `redeem` is not working
+      .&&. assertInstanceLog (Emulator.walletInstanceTag w2) ((Prelude.elem (burnedLogMsg 50_000_000)) . mapMaybe (preview (eteEvent . cilMessage . _ContractLog)))
+      .&&. assertContractError contract' (Emulator.walletInstanceTag w3) contractErrorPredicate ""
     )
     do
-        -- TODO Here we need public key hash to access to `burnedTrace`
-        --
-        --      But in which form? In which encoding??
-        --
-        --      Script can't find `getPubKeyHash $ pubKeyHash $ walletPubKey w3` 
-        --
         let burnedAddr = getPubKeyHash $ pubKeyHash $ walletPubKey w3
-        --Debug.Trace.traceM "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
-        --Debug.Trace.traceShowM burnedAddr
-        --Debug.Trace.traceM (Prelude.show w3)
-        --Debug.Trace.traceM "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^"
         pob1 <- activateContractWallet w1 contract'
         void $ Emulator.waitNSlots 2
         callEndpoint @"burn" pob1 (burnedAddr, Ada.lovelaceValueOf 50_000_000)
@@ -287,8 +264,12 @@ testBurnBurnedTraceAndRedeem = check "burn, burnedTrace and redeem"
         callEndpoint @"redeem" pob3 ()
         void $ Emulator.waitNSlots 2
   where
-    expectedLogMsg = JSON.String "Nothing burned with given commitment" -- TODO give from main module TODO Actually "Value burned with given commitment: ..."
+    contractErrorPredicate (OtherError "No UTxO to redeem from") = True
+    contractErrorPredicate _ = False
 
+
+burnedLogMsg :: Prelude.Int -> JSON.Value
+burnedLogMsg int = JSON.String ("Value burned with given commitment: " <> T.pack (Prelude.show int))
 
 -- | Test configuration: three wallets with 100 ADA on each of them.
 --

@@ -9,13 +9,12 @@ bibliography: burn.bib
 
 # Introduction
 
-We take on the challenge by Charles Hoskinson[@hoskinson-youtube] and implement Proof-of-Burn protocol[@proof-of-burn] on Cardano. After explaining the idea, we take the design through three different stages:
+We take on the challenge by Charles Hoskinson[@hoskinson-youtube] and implement Proof-of-Burn protocol[@proof-of-burn] on Cardano.
 
-1. Pure smart contract implementation as suggested.
-2. The ways how smart contracts Alonzo differ from these of Ethereum-style ledgers,
-   and how to work around these.
-3. Explain the weakness of smart contract approach,
-   and solving it by using direct crafting of transactions.
+1. First we will explain the idea of proof-of-burn and applications of the burning.
+2. We will show smart contract implementation of proof-of-burn on Cardano network and show the mechanism of action.
+3. We show how to deploy and test smart contract on the test net.
+4. We show how to implement proof-of-burn protocol without smart contract, by sending the money to black-hole address.
 
 # Proof-of-burn and its applications
 
@@ -32,7 +31,31 @@ However, some people are opposed to burning some tokens. To prevent this issue,
 we would like to have a protocol that allows people to burn the tokens but not to censor these burns.
 CEO of IOHK was particularly interested in having it implemented for the Cardano network[@hoskinson-youtube].
 
-# Smart contract for Proof-of-Burn
+Security of proof-of-burn is based on the same mechanism as security of cryptocoin transfer transactions:
+cryptographic hash function.
+
+Cryptographic hash function is easy to compute, but very difficult to reverse. It is so difficult
+to reverse, that it is usually considered that given a change in a _single bit of input_,
+computed result will change each bit of the output randomly.
+That means that if we change just a single bit of the output of a cryptographic hash function,
+and try to find an input that generates the changed output, the computation would take
+extremely long time. This means that flipping a lowest bit in a cryptographic hash function
+make a _black hole address_. Whatever is sent to this address is very hard or impossible to recover.
+
+This means that security of crypto transactions can be based solely on the public key cryptography,
+and cryptographic hash functions:
+Whenever money sent, a new _unspent transaction output_ is created. This UTxO records both the amount of money,
+and a _cryptographic hash_ of the public key of the receiver. For receiver to use the money,
+one has to sign a new transaction that spends it with the same public key.
+
+But why flipping the lowest bit in an output of a hash function instead of just using a hash of 0x0?
+Well, using a known value would make the burns immediately visible.
+But the idea of the protocol is to first burn the money, and then prove it was burn afterwards
+in a separate step.
+For this to work, we first put a hash derived from a _commitment_ value. Later we can show
+the commitment value to prove that we computed a _black hole address_.
+
+# Smart contract for Proof-of-Burn on Cardano network
 
 We describe the mechanics of a Proof-of-Burn on a Cardano smart contract.
 Cardano smart contracts are programs that run on the Cardano network
@@ -41,6 +64,24 @@ and allow the contract developer to execute financial actions according to rules
 Smart contracts may establish transactions between multiple parties
 that are transparent and verifiable.
 Driving factors for the adoption of smart contracts are decentralized financial services [@blockchain-financial-services; @uniswap], and decentralized organizations [@dao].
+
+Traditional Ethereum-style smart contracts consist of state recorded on the ledger, and program that is called asynchronously
+by applications in order to change this state. Since the state of the ledger belonging to a smart contract can only
+be changed through the program, all permissible state manipulations can be inferred from the program code
+recorded on the blockchain. 
+
+Cardano smart contracts have different architecture, aiming to make attacks harder by allowing user
+to first simulate each transaction locally within the wallet of the user. The resulting
+change is then validated by the blockchain node, and this very change is recorded.
+
+For this purpose, Cardano smart contracts are described by three components:
+
+* redeemer scripts, that permit or forbid spending of eUTxOs;
+* wallet scripts, that are run on behalf of the user in order to redeem funds, and create new eUTxOs;
+* eUTxOs, each holding funds and a datum that can be used for redeemers to confirm under which conditions these funds may be used again.
+
+That means that Cardano smart contract has no central state on the ledger: each eUTxO has a separate state (datum)
+that is unseparable from the funds in this eUTxOs.
 
 The smart contract would have four possible actions:
 
@@ -105,17 +146,20 @@ We can deploy the smart contract to the Cardano Testnet by executing the followi
 To start a testnet node with our own wallet (you need a mnemonic phrase and a random password), we need:
 
 1. Install Haskell toolchain:
+
 ``` {.sh}
 curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
 source ~/.ghcup/env
 ```
 
 Build the Plutus script:
+
 ``` {.sh}
 cabal run plutus-burner -- 42 out/result.plutus
 ```
 
 Start the containers with cardano-node and cardano-wallet:
+
 ``` {.haskell}
 mkdir out/
 export NETWORK=testnet
@@ -134,11 +178,13 @@ scripts/cardano-cli.sh 'wallet.sh bootstrap_wallet <mnemonic sentence phrase> <p
 ```
 
 Afterwards you may burn your own money with:
+
 ``` {.sh}
 scripts/cardano-cli.sh 'wallet.sh burn_funds out/ <wallet-id> <commitment> <amount>'
 ```
 
 To verify that it was burned:
+
 ``` {.sh}
 scripts/cardano-cli.sh 'wallet.sh validate_burn <commitment> $(cat out/burn.addr)'
 ```
@@ -150,6 +196,11 @@ However, after we publish this script, opponents of the burn may try to compile 
 denying Redeemers that correspond to our Redeemer script hash. That would be some effort,
 but could lead to censoring of our burns.
 
+The interface above uses command line scripts.
+In future we will write about using Plutus PAB library that will allow to sign wallet transactions
+from web applications. Currently this library is still incomplete.
+
+But coming back to the point of censorship.
 Can we make it even harder to censor the burn...?
 
 # From a smart contract to wallet script
@@ -181,11 +232,13 @@ burnAddress = do
 ```
 
 To see how it works, you may generate the burn address with:
+
 ``` {.haskell}
 cabal run generate-burn-address -- "mySecretCommitment"
 ```
 
 Then you may submit the transaction to the Cardano blockchain with:
+
 ``` {.sh}
 scripts/cardano-cli.sh 'wallet.sh send_funds out/ <wallet-id> <burn-address> <amount>'
 ```
@@ -195,3 +248,14 @@ In order to verify the burn you need to check transactions sent to the burn addr
 ``` {.haskell}
 scripts/cardano-cli.sh 'wallet.sh get_utxo <burn-address> | jq .'
 ```
+
+# Conclusion
+
+We shown how to implement proof-of-burn as both smart contract, and a wallet transactions.
+Since Alonzo smart contracts do not yet enjoy convenient infrastructure like the promised
+PAB library for manipulating them from web applications, we recommend users
+to use wallet scripts at the moment.
+
+PAB is the planned library for submitting transactions on user wallet to the Cardano Node
+without need to run wallet CLI scripts. It will facilitate making Cardano applications
+in the near future.

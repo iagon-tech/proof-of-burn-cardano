@@ -40,22 +40,28 @@ docker-compose run cardano-wallet \
 3. Creating/restoring a wallet
 
 ```sh
-scripts/cardano-cli.sh 'wallet.sh bootstrap_wallet <mnemonic sentence phrase> <password>'
+scripts/cardano-cli.sh 'wallet.sh bootstrap_wallet out/ <mnemonic sentence phrase> <password>'
 ```
 
-4. Burn funds
+4. Check that your wallet is done syncing
+
+```sh
+scripts/cardano-cli.sh 'wallet.sh wallet <wallet-id> | jq .state'
+```
+
+5. Burn funds
 
 ```sh
 scripts/cardano-cli.sh 'wallet.sh burn_funds out/ <wallet-id> <commitment> <amount>'
 ```
 
-5. Validate burn
+6. Validate burn
 
 ```sh
 scripts/cardano-cli.sh 'wallet.sh validate_burn <commitment> $(cat out/burn.addr)'
 ```
 
-6. Check that we can't redeem
+7. Check that we can't redeem
 
 ```sh
 # find txhash/txix to redeem

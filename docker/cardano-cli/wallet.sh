@@ -136,34 +136,43 @@ flip_last_bit() {
 }
 
 # @FUNCTION: sha3_256
-# @USAGE: <string>
+# @USAGE: <hex-string>
 # @DESCRIPTION:
-# Hash a string with sha3-256 in hex format.
+# Hash a hex string (is converted to binary) with sha3-256 and return hex format.
 # @STDOUT: The hashed string.
 sha3_256() {
 	[ -z "$1" ] && die "Error: no argument given to sha3_256"
-	printf "%s" "$1" | openssl dgst -r -sha3-256 | awk '{ print $1 }'
+	printf "%s" "$1" | xxd -r -p | openssl dgst -r -sha3-256 | awk '{ print $1 }'
 }
 
 # @FUNCTION: datum_hash
-# @USAGE: <string>
+# @USAGE: <json-file>
 # @DESCRIPTION:
 # Get the datum hash of a string in hex format.
 # @STDOUT: The hashed string.
 datum_hash() {
 	[ -z "$1" ] && die "Error: no argument given to datum_hash"
-	cardano-cli transaction hash-script-data --script-data-value "\"$1\""
+	cardano-cli transaction hash-script-data --script-data-file "$1"
 }
 
 # @FUNCTION: to_burn_datum_hash
-# @USAGE: <string>
+# @USAGE: <hex-string>
 # @DESCRIPTION:
 # Converts burn commitment to a full datum hash ready to be submitted
 # in a transaction.
 # @STDOUT: The hashed string.
 to_burn_datum_hash() {
 	[ -z "$1" ] && die "Error: no argument given to to_burn_datum_hash"
-	datum_hash "$(flip_last_bit "$(sha3_256 "$1")")"
+
+	tmp_dir=$(mktempdir)
+	{ [ -z "${tmp_dir}" ] || ! [ -d "${tmp_dir}" ]; } && die "Failed to create temporary directory"
+
+	edo flip_last_bit "$(sha3_256 "$1")" >"${tmp_dir}"/hashable.txt
+
+	datum_hash "${tmp_dir}"/hashable.txt
+
+	[ -e "${tmp_dir}" ] && rm -r "${tmp_dir}"
+	unset tmp_dir
 }
 
 ######################
@@ -295,7 +304,7 @@ get_utxo() {
 # @DESCRIPTION:
 # Create root privkey, account privkey/pubkey
 create_priv_keys() {
-	[ "$#" -lt 7 ] && die "error: not enough arguments to create_priv_keys (expexted at least 7)"
+	[ "$#" -lt 4 ] && die "error: not enough arguments to create_priv_keys (expexted at least 4)"
 
 	root_prv_out_file=$1
 	shift
@@ -409,11 +418,11 @@ gen_protocol_parameters() {
 
 # TODO: use wallet API
 # @FUNCTION: create_transaction
-# @USAGE: <tx-out-file> <tx_in> <addr> <amount> <change_addr> [datum]
+# @USAGE: <tx-out-file> <tx_in> <addr> <amount> <change_addr> <required-signer> [datum]
 # @DESCRIPTION:
 # Create a transaction for a plutus script.
 create_transaction() {
-	[ "$#" -lt 5 ] && die "error: not enough arguments to create_transaction (expexted 5)"
+	[ "$#" -lt 5 ] && die "error: not enough arguments to create_transaction (expected 5)"
 
 	tmp_dir=$(mktempdir)
 	{ [ -z "${tmp_dir}" ] || ! [ -d "${tmp_dir}" ]; } && die "Failed to create temporary directory"
@@ -425,7 +434,7 @@ create_transaction() {
 	burn_addr=$3
 	burn_amount=$4
 	change_addr=$5
-	burn_datum=$6
+	burn_datum=$7
 
 	# shellcheck disable=SC2046
 	edo cardano-cli transaction build \
@@ -436,6 +445,8 @@ create_transaction() {
 		--change-address "$change_addr" \
 		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}" || echo "--mainnet") \
 		--protocol-params-file "${tmp_dir}/pparams.json" \
+		--witness-override 2 \
+		--required-signer="$6" \
 		--out-file "$tx_out"
 
 	[ -e "${tmp_dir}" ] && rm -r "${tmp_dir}"
@@ -444,7 +455,7 @@ create_transaction() {
 
 # TODO: use wallet API
 # @FUNCTION: redeem_script_transaction
-# @USAGE: <out-dir> <tx-in> <script-file> <datum-value> <redeemer-value> <tx-in-collateral> <change-address>
+# @USAGE: <out-dir> <tx-in> <script-file> <datum-file> <redeemer-file> <tx-in-collateral> <change-address> <required-signer>
 # @DESCRIPTION:
 # Create a transaction for a plutus script.
 redeem_script_transaction() {
@@ -468,12 +479,14 @@ redeem_script_transaction() {
 		--alonzo-era \
 		--tx-in "$tx_in" \
 		--tx-in-script-file "$script_file" \
-		--tx-in-datum-value "$datum_value" \
-		--tx-in-redeemer-value "$redeemer_value" \
+		--tx-in-datum-file "$datum_value" \
+		--tx-in-redeemer-file "$redeemer_value" \
 		--tx-in-collateral "$tx_in_collateral" \
 		--change-address "$change_address" \
 		--protocol-params-file "${tmp_dir}/pparams.json" \
 		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}" || echo "--mainnet") \
+		--witness-override 2 \
+		--required-signer="$8" \
 		--out-file "$tx_out"
 
 	[ -e "${tmp_dir}" ] && rm -r "${tmp_dir}"
@@ -482,13 +495,24 @@ redeem_script_transaction() {
 
 # TODO: use wallet API
 # @FUNCTION: sign_transaction
-# @USAGE: <tx-file> <signing-key> <out-file>
+# @USAGE: <tx-file> <out-file> <signing-key> [more-signing-keys]
 # @DESCRIPTION:
 # Sign a transaction.
 sign_transaction() {
-	[ "$#" -lt 3 ] && die "error: not enough arguments to sign_transaction (expexted 2)"
+	[ "$#" -lt 3 ] && die "error: not enough arguments to sign_transaction (expexted 3)"
 
-	edo cardano-cli transaction sign --tx-body-file "$1" --signing-key-file "$2" --out-file "$3"
+	tx_file=$1
+	shift
+	out_file=$1
+	shift
+
+	# shellcheck disable=SC2046
+	edo cardano-cli transaction sign \
+		--tx-body-file "$tx_file" \
+		$(for k in "$@"; do echo --signing-key-file="$k"; done) \
+		--out-file "$out_file"
+
+	unset tx_file out_file
 }
 
 # TODO: use wallet API
@@ -580,11 +604,12 @@ bootstrap_wallet() {
 
 	(printf >&2 "Your wallet id is: ")
 	echo "$wallet_id"
+
 	unset _wallet wallet_id _state_dir foo
 }
 
 # @FUNCTION: burn_funds
-# @USAGE: <state-dir> <wallet-id> <ascii-commitment> <amount>
+# @USAGE: <state-dir> <wallet-id> <hex-commitment> <amount>
 # @DESCRIPTION:
 # Burn funds.
 # @STDOUT: UTxO of the burn script
@@ -593,18 +618,26 @@ burn_funds() {
 }
 
 # @FUNCTION: validate_burn
-# @USAGE: <cleartext-datum> <script-address>
+# @USAGE: <cleartext-datum-as-hex> <script-address>
 # @DESCRIPTION:
 # Redeem funds.
 validate_burn() {
 	[ "$#" -lt 2 ] && die "error: not enough arguments to validate_burn (expexted 2)"
 
-	datum=$(datum_hash "$(flip_last_bit "$(sha3_256 "$1")")")
+	tmp_dir=$(mktempdir)
+	{ [ -z "${tmp_dir}" ] || ! [ -d "${tmp_dir}" ]; } && die "Failed to create temporary directory"
+
+	edo flip_last_bit "$(sha3_256 "$1")" >"${tmp_dir}"/hashable.txt
+	datum=$(datum_hash "${tmp_dir}"/hashable.txt)
+
 	[ -n "${datum}" ] || die "Could not get datum hash"
 	funds=$(get_utxo "$2" | jq --arg h "$datum" -r '[.[] | select(.data_hash ==$h) | .amount | map(.quantity) | map(tonumber)] | flatten | add')
 
 	(printf >&2 "Following amount has been confirmed as burned for the given datum: ")
 	echo "$funds"
+
+	[ -e "${tmp_dir}" ] && rm -r "${tmp_dir}"
+	unset tmp_dir
 }
 
 # @FUNCTION: lock_funds
@@ -621,7 +654,8 @@ lock_funds() {
 	[ -e "result.plutus" ] || die "Plutus script doesn't exist at result.plutus"
 	script_address "${state_dir}/burn.addr" "result.plutus" 2>&1
 
-	datum_hash "$3" >"${state_dir}/burn_hash.txt" || die
+	edo echo "{\"constructor\":0,\"fields\":[{\"bytes\":\"$3\"}]}" >"${state_dir}/hashable.txt"
+	datum_hash "${state_dir}/hashable.txt" > "${state_dir}/burn_hash.txt" || die
 
 	send_funds "${state_dir}" "$2" "$(cat "${state_dir}/burn.addr")" "$4" "$(cat "${state_dir}/burn_hash.txt")"
 
@@ -639,9 +673,8 @@ send_funds() {
 	state_dir=$1
 	[ -e "${state_dir}" ] || die "state_dir doesn't exist!"
 
-	edo payment_address "${state_dir}/key.vkey" "${state_dir}/payment.addr"
-
 	json=$(coin_selection "$2" "$3" "$4")
+	echo $json
 	[ -n "${json}" ] || die "Could not perform coin selection"
 	# TODO: we just pick the first transaction
 	tx_hash=$(echo "$json" | jq -e -r '.inputs | .[0].id')
@@ -659,6 +692,12 @@ send_funds() {
 		"${state_dir}/key.vkey" \
 		"${derivation_path}"
 
+	create_svkeys \
+		"${state_dir}/root.prv" \
+		"${state_dir}/key0.skey" \
+		"${state_dir}/key0.vkey" \
+		"1852H/1815H/0H/0/0"
+
 	# shellcheck disable=SC2046
 	edo create_transaction \
 		"${state_dir}/tx.raw" \
@@ -666,9 +705,10 @@ send_funds() {
 		"$3" \
 		"$4" \
 		"${change_address}" \
+		"${state_dir}/key0.skey" \
 		$([ -n "$5" ] && echo "$5")
 
-	edo sign_transaction "${state_dir}/tx.raw" "${state_dir}/key.skey" "${state_dir}/tx.sign"
+	edo sign_transaction "${state_dir}/tx.raw" "${state_dir}/tx.sign" "${state_dir}/key.skey" "${state_dir}/key0.skey"
 	edo submit_transaction "${state_dir}/tx.sign"
 
 	while true; do
@@ -718,16 +758,26 @@ redeem_funds() {
 		"${state_dir}/key.vkey" \
 		"${derivation_path}"
 
+	create_svkeys \
+		"${state_dir}/root.prv" \
+		"${state_dir}/key0.skey" \
+		"${state_dir}/key0.vkey" \
+		"1852H/1815H/0H/0/0"
+
+	printf "%s" "{\"constructor\":0,\"fields\":[{\"bytes\":\"$5\"}]}" >"${state_dir}/datum_file.txt"
+	printf "%s" "{\"constructor\":0,\"fields\":[]}" >"${state_dir}/redeemer_file.txt"
+
 	edo redeem_script_transaction \
 		"${state_dir}/tx.raw" \
 		"$3#$4" \
 		"result.plutus" \
-		"\"$5\"" \
-		"\"$5\"" \
+		"${state_dir}/datum_file.txt" \
+		"${state_dir}/redeemer_file.txt" \
 		"${tx_hash}#${tx_ix}" \
-		"$change_address"
+		"$change_address" \
+		"${state_dir}/key0.skey"
 
-	edo sign_transaction "${state_dir}/tx.raw" "${state_dir}/key.skey" "${state_dir}/tx.sign"
+	edo sign_transaction "${state_dir}/tx.raw" "${state_dir}/tx.sign" "${state_dir}/key.skey" "${state_dir}/key0.skey"
 	edo submit_transaction "${state_dir}/tx.sign"
 
 	while true; do

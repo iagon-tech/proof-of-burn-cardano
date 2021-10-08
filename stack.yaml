@@ -53,7 +53,7 @@ extra-deps:
 
 # https://github.com/input-output-hk/plutus/releases/tag/plutus-starter-devcontainer%2Fv1.0.9
 - git: https://github.com/input-output-hk/plutus.git
-  commit: 36e2c8bdbb6e70d25a31331e5cd23f26dc3162d5
+  commit: 58c093a49eb7a369865e361179d649264fc817a4
   subdirs:
       - freer-extras
       - playground-common
@@ -67,7 +67,7 @@ extra-deps:
       - prettyprinter-configurable
       - quickcheck-dynamic
       - word-array
-- git: https://github.com/michaelpj/flat.git
+- git: https://github.com/Quid2/flat.git
   commit: ee59880f47ab835dbd73bea0847dab7869fc20d8
 - git: https://github.com/shmish111/purescript-bridge.git
   commit: 6a92d7853ea514be8b70bab5e72077bf5a510596
@@ -76,7 +76,7 @@ extra-deps:
 - git: https://github.com/input-output-hk/cardano-crypto.git
   commit: 07397f0e50da97eaa0575d93bee7ac4b2b2576ec
 - git: https://github.com/input-output-hk/cardano-base
-  commit: 46502694f6a9f0498f822068008b232b3837a9e9
+  commit: 592aa61d657ad5935a33bace1243abce3728b643
   subdirs:
     - base-deriving-via
     - binary
@@ -93,8 +93,23 @@ extra-deps:
   subdirs:
     - cardano-prelude
     - cardano-prelude-test
+
+- git: https://github.com/input-output-hk/cardano-addresses
+  commit: d2f86caa085402a953920c6714a0de6a50b655ec
+  subdirs:
+    - core
+
+- git: https://github.com/input-output-hk/cardano-wallet
+  commit: ae7569293e94241ef6829139ec02bd91abd069df
+  subdirs:
+    - lib/text-class
+    - lib/strict-non-empty-containers
+    - lib/core
+    - lib/test-utils
+    - lib/numeric
+
 - git: https://github.com/input-output-hk/ouroboros-network
-  commit: 6d00ff77f9bcd769fb6d7fd02216cec4e837bfcf
+  commit: 5d37a927046bc7da2887830d8e35cf604622ce09
   subdirs:
     - monoidal-synchronisation
     - typed-protocols
@@ -109,6 +124,7 @@ extra-deps:
     - io-sim
     - io-classes
     - network-mux
+    - ntp-client
 - git: https://github.com/input-output-hk/iohk-monitoring-framework
   commit: 46f994e216a1f8b36fe4669b47b2a7011b0e153c
   subdirs:
@@ -120,8 +136,8 @@ extra-deps:
     - plugins/backend-monitoring
     - plugins/backend-trace-forwarder
     - plugins/scribe-systemd
-- git: https://github.com/input-output-hk/cardano-ledger-specs
-  commit: 8efcfc755faae4db3a64ad45343235fce3ed5c47
+- git: https://github.com/raduom/cardano-ledger-specs
+  commit: ef6bb99782d61316da55470620c7da994cc352b2
   subdirs:
     - byron/chain/executable-spec
     - byron/crypto
@@ -131,6 +147,7 @@ extra-deps:
     - byron/ledger/impl/test
     - semantics/executable-spec
     - semantics/small-steps-test
+    - cardano-protocol-tpraos
     - shelley/chain-and-ledger/dependencies/non-integer
     - shelley/chain-and-ledger/executable-spec
     - shelley/chain-and-ledger/shelley-spec-ledger-test
@@ -138,7 +155,7 @@ extra-deps:
     - cardano-ledger-core
     - alonzo/impl
 - git: https://github.com/input-output-hk/cardano-node.git
-  commit: 8cf2b208c7708bd890c7e74d5b1d7c4167a3b40b
+  commit: 191b91eec3c7d845a55347781329d50bf36871d7
   subdirs:
     - cardano-api
     - cardano-node

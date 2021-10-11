@@ -1,42 +1,28 @@
-{-# LANGUAGE DataKinds             #-}
-{-# LANGUAGE NamedFieldPuns        #-}
-{-# LANGUAGE DeriveAnyClass        #-}
-{-# LANGUAGE DeriveGeneric         #-}
-{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE NumericUnderscores    #-}
-{-# LANGUAGE OverloadedStrings     #-}
-{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE LambdaCase            #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TemplateHaskell       #-}
-{-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeOperators         #-}
 module PropTests where
 
+-- TODO:
+-- 1. Make `redeem` action work before `lock` -- and catch exception.
+-- 2. Make `burnedTrace` action work when checking actual burned value
+-- 3. Make tests with negative (?) values
+-- 4. Lensify operations with states
 
 import           Control.Lens                       hiding (elements)
-import           Control.Exception.Lens
 import           Control.Monad                      (void, when)
 import           Data.Default                       (Default (..))
 import           Data.Map                           (Map)
 import qualified Data.Map                           as Map
-import           Data.Maybe                         (isJust, isNothing)
-import           Data.Monoid                        (Last (..))
-import           Data.String                        (IsString (..))
-import           Data.Text                          (Text)
+import           Data.Maybe                         (isJust)
+import           Ledger                             hiding (singleton)
+import           Ledger.Ada                         as Ada
 import           Plutus.Contract                    (ContractError)
 import           Plutus.Contract.Test
 import           Plutus.Contract.Test.ContractModel
 import           Plutus.Trace.Emulator
-import           Ledger                             hiding (singleton)
-import           Ledger.Ada                         as Ada
-import           Ledger.Value
-
--- import Control.Eff.Exception as Eff
-import Control.Monad.Freer.Error
 
 import           Test.QuickCheck
 import           Test.Tasty
@@ -44,72 +30,109 @@ import           Test.Tasty.QuickCheck
 
 import           ProofOfBurn
 
-
---data POBState = POBState
---    { _psLocks :: !Map Wallet Integer
---    } deriving Show
-
---makeLenses ''POBState
---
-
--- TODO use `Value` (or even `Ada Value`) instead of `Integer`
+-- import qualified Debug.Trace as T
 
 
-data POBModel = POBModel { _pobLocks :: Map Wallet Integer }
+data POBModel = POBModel
+    { _pobLocks :: Map Wallet Ada
+    , _pobBurns :: Map Wallet Ada
+    }
     deriving Show
 
 makeLenses ''POBModel
 
 
+-- | There were few issues related to single instances of contract.
+--   That's why we check the interaction of several contract instances.
+newtype ContractInstanceId = ContractInstanceId Int deriving (Show, Eq)
+
+contractInstanceIds :: [ContractInstanceId]
+contractInstanceIds = map ContractInstanceId [1,2,3]
+
+genContractInstanceId :: Gen ContractInstanceId
+genContractInstanceId =  elements contractInstanceIds
+
+
 instance ContractModel POBModel where
 
     data Action POBModel
-        = Lock Wallet Wallet Integer
-        | Redeem Wallet
+        = Lock        ContractInstanceId Wallet Wallet Ada
+        | Redeem      ContractInstanceId        Wallet
+        | Burn        ContractInstanceId Wallet Wallet Ada
+        | BurnedTrace ContractInstanceId Wallet Wallet
         deriving (Show, Eq)
 
-
     data ContractInstanceKey POBModel w s e where
-        -- TODO So we can't use contract twice?? Well, ok, let's use current slot to make new intsance
-        POBKey :: Wallet -> Slot -> ContractInstanceKey POBModel () ProofOfBurn.Schema ContractError
+        POBKey           :: ContractInstanceId -> Wallet -> ContractInstanceKey POBModel () ProofOfBurn.Schema ContractError
+        POBWithAnswerKey :: ContractInstanceId -> Wallet -> ContractInstanceKey POBModel ProofOfBurn.BurnedTraceAnswer ProofOfBurn.Schema ContractError
 
     arbitraryAction _ = oneof $
-        [ Lock   <$> genWallet <*> genWallet <*> genNonNeg -- TODO gen any number, even negative and zero
-        , Redeem <$> genWallet
+        [ Lock   <$> genContractInstanceId <*> genWallet <*> genWallet <*> genAda
+        , Redeem <$> genContractInstanceId <*> genWallet
+        , Burn        <$> genContractInstanceId <*> genWallet <*> genWallet <*> genAda
+        , BurnedTrace <$> genContractInstanceId <*> genWallet <*> genWallet
         ]
 
-    initialState = POBModel Map.empty
+    initialState = POBModel Map.empty Map.empty
 
-    nextState (Lock wFrom wTo v) = do
-        withdraw wFrom (Ada.lovelaceValueOf v)
-        (pobLocks . at wTo) $~ (Just . maybe v (+v))
+    nextState (Lock _cid wFrom wTo val) = do
+        withdraw wFrom (toValue val)
+        (pobLocks . at wTo) $~ (Just . maybe val (+val))
         wait 1
 
-    nextState (Redeem wTo) = do
-        v <- askContractState (Map.lookup wTo . _pobLocks) -- TODO change to lens
+    nextState (Redeem _cid wTo) = do
+        v <- askContractState (Map.lookup wTo . _pobLocks)
         case v of
             Nothing -> return ()
-            Just (vv::Integer) -> do
-                deposit wTo (Ada.lovelaceValueOf vv)
-                (pobLocks . at wTo) $= Nothing -- TODO change to deletion via lens
+            Just (vv::Ada) -> do
+                deposit wTo (toValue vv)
+                (pobLocks . at wTo) $= Nothing
         wait 1
 
+    nextState (Burn _cid wFrom wTo val) = do
+        withdraw wFrom (toValue val)
+        (pobBurns . at wTo) $~ (Just . maybe val (+val))
+        wait 1
 
-    perform h ms cmd = do
-        let slot = ms ^. Plutus.Contract.Test.ContractModel.currentSlot
-        case cmd of
-            (Lock   wFrom wTo v) -> callEndpoint @"lock"   (h $ POBKey wFrom slot) (pubKeyHash $ walletPubKey wTo, Ada.lovelaceValueOf v) >> delay 1
-            (Redeem       wTo)   -> 
-                -- TODO here it is need to catch and process error from endpoint
-                callEndpoint @"redeem" (h $ POBKey wTo slot)   () >> delay 1
-                -- catchError (callEndpoint @"redeem" (h $ POBKey wTo slot)   ()) (\(_:: Error EmulatorRuntimeError ) -> undefined)
-                -- catching _ContractError (callEndpoint @"redeem" (h $ POBKey wTo slot)   ()) (\_ -> undefined)
-                -- >> delay 1
+    nextState (BurnedTrace _cid _wFrom _wTo) = do
+        -- Nothing to do
+        wait 1
 
-    precondition s (Lock wFrom wTo v) = True
-    precondition s (Redeem     wTo)   =
+    perform h ms = \case
+        (Lock cid wFrom wTo val) -> do
+            callEndpoint @"lock"   (h $ POBKey cid wFrom) (pubKeyHash $ walletPubKey wTo, toValue val)
+            delay 1
+        (Redeem cid wTo) -> do
+            callEndpoint @"redeem" (h $ POBKey cid wTo) ()
+            delay 1
+        (Burn cid wFrom wTo val) -> do
+            callEndpoint @"burn" (h $ POBKey cid wFrom) (getPubKeyHash $ pubKeyHash $ walletPubKey wTo, toValue val)
+            delay 1
+        (BurnedTrace cid wFrom wTo) -> do
+            let ch = h $ POBWithAnswerKey cid wFrom
+            let (alreadyBurned :: Maybe Value)  = toValue <$> (ms ^. contractState . pobBurns . at wTo)
+            callEndpoint @"burnedTrace" ch (getPubKeyHash $ pubKeyHash $ walletPubKey wTo)
+            delay 2
+            actualBurned <- observableState ch
+            delay 2
+            when (alreadyBurned /= actualBurned) $ do
+                -- TODO
+                return ()
+                {-
+                T.traceM "&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&"
+                T.traceM ("Must be equal; expected: " ++ Prelude.show alreadyBurned ++ "\nactual: " ++ Prelude.show actualBurned)
+                T.traceM "-- MODEL: ----------------"
+                T.traceShowM ms
+                T.traceM "^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^"
+                Prelude.error ("Must be equal; expected: " ++ Prelude.show alreadyBurned ++ "\nactual: " ++ Prelude.show actualBurned)
+                -}
+
+    precondition _ms (Lock _cid _wFrom _wTo _v) = True
+    precondition ms (Redeem _cid       wTo)   =
         -- TODO remove this check: script will work with empty redeem (but it is need to catch error)
-        isJust (s ^. contractState . pobLocks . at wTo)
+        isJust (ms ^. contractState . pobLocks . at wTo)
+    precondition _ms (Burn _cid _wFrom _wTo _v) = True
+    precondition _ms (BurnedTrace _cid _wFrom _wTo) = True
 
 deriving instance Eq (ContractInstanceKey POBModel w s e)
 deriving instance Show (ContractInstanceKey POBModel w s e)
@@ -117,25 +140,32 @@ deriving instance Show (ContractInstanceKey POBModel w s e)
 delay :: Int -> EmulatorTrace ()
 delay = void . waitNSlots . fromIntegral
 
+
+-- We need at least 5 wallets, because we want to test at least this cases:
+--
+-- 1. lock from w1, w2 for w3;
+-- 2. lock from w1 to w2, from w3 to w4, and w5 is not touched;
+-- 3. lock from w1 to w2, burn from w3 for w4, and w5 wants to check.
 wallets :: [Wallet]
-wallets = [w1, w2, w3] -- TODO add more wallets
+wallets = [w1, w2, w3, w4, w5]
 
 genWallet :: Gen Wallet
 genWallet = elements wallets
 
-genNonNeg :: Gen Integer
-genNonNeg = (+1) <$> (getNonNegative <$> arbitrary)
+genAda :: Gen Ada
+genAda = (lovelaceOf . (+1)) <$> (getNonNegative <$> arbitrary)
 
+--
 
 instanceSpec :: [ContractInstanceSpec POBModel]
-instanceSpec =
-    [ContractInstanceSpec (POBKey w s) w ProofOfBurn.endpoints | w <- wallets
-                                                               , s <- map Slot [0..100] ] -- TODO it seems very weird to make contract for every `lock`...
-                                                                                          --      another way is to precreate some contracts for `lock` only and use counter
-                                                                                          --      in model, not `currentSlot`
-                                                                                          --
-                                                                                          -- Another problem is that instances make very slow
-                                                                                          --
+instanceSpec = concat
+    [ [ ContractInstanceSpec (POBKey           cid w) w (ProofOfBurn.endpoints)
+      , ContractInstanceSpec (POBWithAnswerKey cid w) w (ProofOfBurn.endpoints')
+      ]
+    | w   <- wallets
+    , cid <- contractInstanceIds
+    ]
+
 -- * --------------------------------------------------------------------------
 
 tests :: TestTree
@@ -151,3 +181,4 @@ prop_POB = withMaxSuccess 100 . propRunActionsWithOptions
     initDistr :: InitialDistribution
     initDistr = Map.fromList [ (w, lovelaceValueOf 1_000_000_000)
                              | w <- wallets ]
+

@@ -22,7 +22,7 @@ import           Ledger.Ada                         as Ada
 import           Plutus.Contract                    (ContractError)
 import           Plutus.Contract.Test
 import           Plutus.Contract.Test.ContractModel
-import           Plutus.Trace.Emulator
+import           Plutus.Trace.Emulator as Emulator
 
 import           Test.QuickCheck
 import           Test.Tasty
@@ -63,8 +63,8 @@ instance ContractModel POBModel where
         deriving (Show, Eq)
 
     data ContractInstanceKey POBModel w s e where
-        POBKey           :: ContractInstanceId -> Wallet -> ContractInstanceKey POBModel () ProofOfBurn.Schema ContractError
-        POBWithAnswerKey :: ContractInstanceId -> Wallet -> ContractInstanceKey POBModel ProofOfBurn.BurnedTraceAnswer ProofOfBurn.Schema ContractError
+        POBKey           :: ContractInstanceId -> Wallet -> ContractInstanceKey POBModel ContractState ProofOfBurn.Schema ContractError
+        POBWithAnswerKey :: ContractInstanceId -> Wallet -> ContractInstanceKey POBModel ContractState ProofOfBurn.Schema ContractError
 
     arbitraryAction _ = oneof $
         [ Lock   <$> genContractInstanceId <*> genWallet <*> genWallet <*> genAda
@@ -111,13 +111,13 @@ instance ContractModel POBModel where
         (BurnedTrace cid wFrom wTo) -> do
             let ch = h $ POBWithAnswerKey cid wFrom
             let (alreadyBurned :: Maybe Value)  = toValue <$> (ms ^. contractState . pobBurns . at wTo)
-            callEndpoint @"burnedTrace" ch (getPubKeyHash $ pubKeyHash $ walletPubKey wTo)
+            callEndpoint @"validateBurn" ch (getPubKeyHash $ pubKeyHash $ walletPubKey wTo)
             delay 2
-            actualBurned <- observableState ch
-            delay 2
-            when (alreadyBurned /= actualBurned) $ do
-                -- TODO
-                return ()
+            observableState ch >>= \case
+              ContractStateAction (BurnedValueValidated val) _ ->
+                when (alreadyBurned /= val)
+                  $ Emulator.throwError (GenericError $ "Must be " <> show alreadyBurned <> ", but got: " ++ show val)
+              _ -> Emulator.throwError (GenericError "Must return traced value")
                 {-
                 T.traceM "&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&"
                 T.traceM ("Must be equal; expected: " ++ Prelude.show alreadyBurned ++ "\nactual: " ++ Prelude.show actualBurned)
@@ -160,7 +160,7 @@ genAda = (lovelaceOf . (+1)) <$> (getNonNegative <$> arbitrary)
 instanceSpec :: [ContractInstanceSpec POBModel]
 instanceSpec = concat
     [ [ ContractInstanceSpec (POBKey           cid w) w (ProofOfBurn.endpoints)
-      , ContractInstanceSpec (POBWithAnswerKey cid w) w (ProofOfBurn.endpoints')
+      , ContractInstanceSpec (POBWithAnswerKey cid w) w (ProofOfBurn.endpoints)
       ]
     | w   <- wallets
     , cid <- contractInstanceIds

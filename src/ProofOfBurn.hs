@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE MagicHash                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
@@ -31,40 +32,93 @@
 --  In order to check that value was indeed burned, one needs to run a `burned` script with the same commitment value.
 module ProofOfBurn where 
 
-import           Control.Monad             (void, when)
-import           Control.Lens              hiding (snoc, unsnoc)
+import           Control.Monad             (void, when, forM)
+import           Control.Applicative       (liftA3)
+import Control.Lens ( foldOf, folded, Field1(_1), Field4(_4) )
 import           Data.Bits                 (xor)
 import           Data.Char                 (ord, chr)
+import qualified Data.Aeson                as Aeson
 import           Data.Sequences            (snoc, unsnoc)
 import           Data.Maybe                (fromJust, catMaybes)
 import qualified Data.Map.Strict           as Map
 import qualified Data.List.NonEmpty        as NonEmpty(toList)
-import           Plutus.Contract
+import Plutus.Contract
+    ( (>>),
+      logInfo,
+      endpoint,
+      ownPubKey,
+      submitTxConstraints,
+      submitTxConstraintsSpending,
+      utxosAt,
+      utxosTxOutTxAt,
+      collectFromScript,
+      selectList,
+      tell,
+      Endpoint,
+      Contract,
+      Promise,
+      AsContractError,
+      type (.\/), ContractError (OtherError) )
+import Plutus.ChainIndex.Client ()
 import qualified PlutusTx
 import qualified PlutusTx.IsData  as PlutusTx
-import           PlutusTx.Prelude hiding (Applicative (..))
+import PlutusTx.Prelude
+    ( otherwise,
+      return,
+      (>>=),
+      Bool(False),
+      Maybe(..),
+      Either(Right, Left),
+      (.),
+      flip,
+      sha3_256,
+      either,
+      elem,
+      const,
+      ($),
+      traceError,
+      traceIfFalse,
+      BuiltinByteString,
+      Eq((==)),
+      Functor(fmap),
+      Semigroup((<>)) )
 import           PlutusTx.Builtins.Internal (BuiltinByteString(..))
-import           Ledger                    (Address, Datum(..), scriptAddress)
+import           Ledger                    (Address(..), Datum(..), scriptAddress, datumHash)
 import           Ledger.AddressMap         (UtxoMap)
 import qualified Ledger.Constraints        as Constraints
 import qualified Ledger.Typed.Scripts      as Scripts
 import           Ledger.Typed.Scripts.Validators(ValidatorType)
 import           Ledger.Value              (Value, isZero, valueOf)
-import           Ledger.Tx
-import           Plutus.V1.Ledger.Crypto
-import           Plutus.V1.Ledger.Contexts
+import Ledger.Tx
+    ( TxOutRef,
+      ChainIndexTxOut(PublicKeyChainIndexTxOut, ScriptChainIndexTxOut,
+                      _ciTxOutDatum),
+      _ScriptChainIndexTxOut,
+      Address )
+import Plutus.V1.Ledger.Crypto
+    ( PubKey, PubKeyHash(getPubKeyHash) )
+import Plutus.V1.Ledger.Credential ()
+import Plutus.V1.Ledger.Contexts
+    ( ScriptContext(ScriptContext, scriptContextTxInfo),
+      TxInfo(txInfoSignatories) )
 import           Plutus.V1.Ledger.Tx (Tx(..), TxOutRef, TxOutTx(..), txData, txOutDatum)
 import qualified Plutus.V1.Ledger.Scripts as Plutus
-import           Playground.Contract
+import Playground.Contract
+    ( mkKnownCurrencies, mkSchemaDefinitions, KnownCurrency )
 import qualified Data.Text                as T
-import Wallet.Emulator.Wallet
-import Ledger.Crypto
+import Wallet.Emulator.Wallet ()
+import Ledger.Crypto ( pubKeyHash )
 import qualified Prelude
 import qualified Data.ByteString.Short as SBS
 import qualified Data.ByteString.Lazy  as LBS
-import           Codec.Serialise
+import Codec.Serialise ( serialise )
 import           Cardano.Api.Shelley (PlutusScript (..), PlutusScriptV1)
-import           Plutus.ChainIndex.Tx
+import Plutus.ChainIndex.Tx
+    ( ChainIndexTx(ChainIndexTx, _citxData) )
+import           Cardano.Prelude ( Set, MonadError (throwError) )
+import qualified Data.Set as Set
+
+
 
 -- | Utxo datum holds either:
 --     * the hash of the address that can redeem the value, if it was locked;
@@ -106,6 +160,7 @@ burnerTypedValidator = Scripts.mkTypedValidator @Burner
 type Schema = Endpoint "lock"   (PubKeyHash, Value)        -- lock the value
           .\/ Endpoint "burn"   (BuiltinByteString, Value) -- burn the value
           .\/ Endpoint "burnedTrace"   BuiltinByteString   -- burn the value
+          .\/ Endpoint "burnedTraceWithAnswer" BuiltinByteString    -- burn the value and return result
           .\/ Endpoint "redeem" ()                         -- redeem the locked value
 
 burnerScript :: Plutus.Script
@@ -120,8 +175,11 @@ burnerSBS = SBS.toShort . LBS.toStrict $ serialise burnerScript
 burnerSerialised :: PlutusScript PlutusScriptV1
 burnerSerialised = PlutusScriptSerialised burnerSBS
 
-contract :: AsContractError e => Contract w Schema e ()
+contract :: Contract w Schema ContractError ()
 contract = selectList [lock, burn, burnedTrace, redeem] >> contract
+
+contract' :: Contract BurnedTraceAnswer Schema ContractError ()
+contract' = selectList [burnedTraceWithAnswer] >> contract'
 
 -- | The "lock" contract endpoint.
 --
@@ -160,19 +218,37 @@ flipCommitment (BuiltinByteString bs) = BuiltinByteString $ do
 -- | The "redeem" contract endpoint.
 --
 --   Can redeem the value, if it was published, not burned.
-redeem :: AsContractError e => Promise w Schema e ()
+redeem :: Promise w Schema ContractError ()
 redeem = endpoint @"redeem" $ \() -> do
-    unspentOutputs <- utxosAt contractAddress
+    pubk <- ownPubKey
+    unspentOutputs' <- utxosTxOutTxAt contractAddress
+    let relevantOutputs = Map.map Prelude.fst $ filterUTxOs unspentOutputs' (filterByPubKey pubk)
+    when (Map.null relevantOutputs) $ throwError (OtherError $ T.pack "No UTxO to redeem from")
     let redeemer = MyRedeemer ()
-        tx       = collectFromScript unspentOutputs redeemer
-    void $ submitTxConstraintsSpending burnerTypedValidator unspentOutputs tx
+        tx       = collectFromScript relevantOutputs redeemer
+    void $ submitTxConstraintsSpending burnerTypedValidator relevantOutputs tx
+ where
+   filterUTxOs ::  Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx)
+                -> ((ChainIndexTxOut, ChainIndexTx) -> Bool)
+                -> Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx)
+   filterUTxOs txMap p = flip Map.filter txMap p
 
+   filterByPubKey :: PubKey -> (ChainIndexTxOut, ChainIndexTx) -> Bool
+   filterByPubKey pubk txtpl = fmap fromMyDatum (getMyDatum txtpl) == Just (sha3_256 (getPubKeyHash (pubKeyHash pubk)))
 
-burnedTrace :: AsContractError e => Promise w Schema e ()
-burnedTrace = endpoint @"burnedTrace" $ \aCommitment -> do
+type BurnedTraceAnswer = Maybe Value
+
+burnedTrace' :: AsContractError e => BuiltinByteString -> Contract w Schema e BurnedTraceAnswer
+burnedTrace' aCommitment = do
   burnedVal <- burned aCommitment
-  if | isZero burnedVal -> logInfo @Prelude.String "Nothing burned with given commitment"
-     | otherwise        -> logInfo @Prelude.String ("Value burned with given commitment: "  <> Prelude.show (valueOf burnedVal "" ""))
+  if | isZero burnedVal -> logInfo @Prelude.String "Nothing burned with given commitment" >> return Nothing
+     | otherwise        -> logInfo @Prelude.String ("Value burned with given commitment: "  <> Prelude.show (valueOf burnedVal "" "")) >> return (Just burnedVal)
+
+burnedTrace :: Promise w Schema ContractError ()
+burnedTrace = endpoint @"burnedTrace" $ void . burnedTrace'
+
+burnedTraceWithAnswer :: Promise (Maybe Value) Schema ContractError ()
+burnedTraceWithAnswer = endpoint @"burnedTraceWithAnswer" $ \aCommitment -> burnedTrace' aCommitment >>= tell
 
 -- | The "burned" confirmation endpoint.
 --
@@ -188,23 +264,26 @@ burned aCommitment = do
     totalValue         = foldOf (folded . _1 . _ScriptChainIndexTxOut . _4)
     -- | Check if the given transaction output is commited to burn with the same hash as `aCommitment`.
     withCommitment    :: (ChainIndexTxOut, ChainIndexTx) -> Bool
-    withCommitment (PublicKeyChainIndexTxOut {}, _) = False
-    withCommitment (ScriptChainIndexTxOut { _ciTxOutDatum = txOutDatumHash }, ChainIndexTx{ _citxData = txData })
-      = burnHash == Just commitmentHash
-      where
-        -- | Extract hash from the Utxo.
-        burnHash  :: Maybe BuiltinByteString
-        burnHash   = do
-          dh            <- either Just (const Nothing) txOutDatumHash
-          Datum d       <- dh `Map.lookup` txData     -- lookup Datum from the hash
-          MyDatum aHash <- PlutusTx.fromBuiltinData d -- Unpack from PlutusTx.Datum type.
-          return           aHash
+    withCommitment txtpl = fmap fromMyDatum (getMyDatum txtpl) == Just commitmentHash
+
     commitmentHash = flipCommitment $ sha3_256 aCommitment
 
 
+getMyDatum :: (ChainIndexTxOut, ChainIndexTx) -> Maybe MyDatum
+getMyDatum (PublicKeyChainIndexTxOut {}, _) = Nothing
+getMyDatum (ScriptChainIndexTxOut { _ciTxOutDatum = Left dh }, ChainIndexTx{ _citxData = txData }) = do
+  Datum d       <- dh `Map.lookup` txData     -- lookup Datum from the hash
+  PlutusTx.fromBuiltinData d                  -- Unpack from PlutusTx.Datum type.
+getMyDatum (ScriptChainIndexTxOut { _ciTxOutDatum = Right (Datum datum) }, _) =
+   PlutusTx.fromBuiltinData datum
+
+
 -- | Script endpoints available for calling the contract.
-endpoints :: Contract () Schema T.Text ()
+endpoints :: Contract () Schema ContractError ()
 endpoints = contract
+
+endpoints' :: Contract BurnedTraceAnswer Schema ContractError ()
+endpoints' = contract'
 
 mkSchemaDefinitions ''Schema
 

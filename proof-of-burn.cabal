@@ -1,15 +1,14 @@
-Cabal-Version:      2.4
-Name:               proof-of-burn
-Version:            0.1.0.0
-Author:              Michał J. Gajda
-Maintainer:          mjgajda@migamake.com
-Build-Type:          Simple
-Copyright:           © 2021 Iagon
+cabal-version: 2.4
+name:          proof-of-burn
+version:       0.1.0.0
+author:        Michał J. Gajda
+maintainer:    mjgajda@migamake.com
+build-type:    Simple
+copyright:     © 2021 Iagon
 
 common common-extensions
   default-extensions:
     DataKinds
-    -- NoImplicitPrelude
     NumericUnderscores
     OverloadedStrings
     ScopedTypeVariables
@@ -17,80 +16,96 @@ common common-extensions
     TypeFamilies
     TypeOperators
 
+-- NoImplicitPrelude
 library
-  hs-source-dirs:      src
-  exposed-modules:     ProofOfBurn
-  build-depends:       aeson
-                     , base ^>=4.14.1.0
-                     , bytestring
-                     , containers
-                     , cardano-api
-                     , lens
-                     , playground-common
-                     , plutus-core
-                     , plutus-contract
-                     , plutus-chain-index
-                     , plutus-ledger
-                     , plutus-tx-plugin
-                     , plutus-tx
-                     , serialise
-                     , text
-                     , plutus-ledger-api
-                     , mono-traversable
-  default-language:    Haskell2010
-  ghc-options:         -Wall -fobject-code -fno-ignore-interface-pragmas -fno-omit-interface-pragmas -fno-strictness -fno-spec-constr -fno-specialise
+  hs-source-dirs:   src
+  exposed-modules:  ProofOfBurn
+  build-depends:
+    , aeson
+    , base                ^>=4.14.1.0
+    , bytestring
+    , cardano-api
+    , cardano-prelude
+    , containers
+    , lens
+    , mono-traversable
+    , playground-common
+    , plutus-chain-index
+    , plutus-contract
+    , plutus-core
+    , plutus-ledger
+    , plutus-ledger-api
+    , plutus-tx
+    , plutus-tx-plugin
+    , serialise
+    , text
+
+  default-language: Haskell2010
+  ghc-options:
+    -Wall -fobject-code -fno-ignore-interface-pragmas
+    -fno-omit-interface-pragmas -fno-strictness -fno-spec-constr
+    -fno-specialise
 
 executable plutus-burner
-  main-is:              app/plutus-burner/Main.hs
-  ghc-options:          -threaded -rtsopts "-with-rtsopts=-T"
-
-  build-depends:        cardano-api
-                      , base ^>=4.14.1.0
-                      , cardano-ledger-alonzo
-                      , plutus-ledger
-                      , proof-of-burn
-                      , plutus-ledger-api
-                      , bytestring
+  main-is:       app/plutus-burner/Main.hs
+  ghc-options:   -threaded -rtsopts -with-rtsopts=-T
+  build-depends:
+    , base                   ^>=4.14.1.0
+    , bytestring
+    , cardano-api
+    , cardano-ledger-alonzo
+    , plutus-ledger
+    , plutus-ledger-api
+    , proof-of-burn
 
 executable generate-burn-address
-  main-is:              app/generate-burn-address/Main.hs
-  ghc-options:          -threaded -rtsopts "-with-rtsopts=-T"
-
-  build-depends:        cardano-api
-                      , base ^>=4.14.1.0
-                      , bytestring
-                      , cardano-ledger-core
-                      , cardano-crypto-class
-                      , shelley-spec-ledger
-                      , cardano-binary
-                      , text
-                      , unix
+  main-is:       app/generate-burn-address/Main.hs
+  ghc-options:   -threaded -rtsopts -with-rtsopts=-T
+  build-depends:
+    , base                  ^>=4.14.1.0
+    , bytestring
+    , cardano-api
+    , cardano-binary
+    , cardano-crypto-class
+    , cardano-ledger-core
+    , shelley-spec-ledger
+    , text
+    , unix
 
 test-suite plutus-burner-tests
-  import: common-extensions
-  type: exitcode-stdio-1.0
-  main-is: Main.hs
-  hs-source-dirs: test
-  other-modules: UnitTests
-               , PropTests
+  import:           common-extensions
+  type:             exitcode-stdio-1.0
+  main-is:          Main.hs
+  hs-source-dirs:   test
+  other-modules:
+    PropTests
+    UnitTests
+
   default-language: Haskell2010
-  ghc-options:         -Wall -fobject-code -fno-ignore-interface-pragmas -fno-omit-interface-pragmas
-  build-depends:       base ^>=4.14.1.0
-                     , QuickCheck
-                     , aeson
-                     , containers
-                     , data-default
-                     , freer-extras
-                     , lens
-                     , plutus-contract
-                     , plutus-ledger
-                     , plutus-tx
-                     , proof-of-burn
-                     , tasty
-                     , tasty-hunit
-                     , tasty-quickcheck
-                     , text
-                     , freer-simple
-                     -- , extensible-effects
+  ghc-options:
+    -Wall
+    -O2
+    -threaded
+    -rtsopts -with-rtsopts=-T
+    -- speed up code in GHCi:
+    -fobject-code -fno-ignore-interface-pragmas -fno-omit-interface-pragmas
+
+  build-depends:
+    , aeson
+    , base              ^>=4.14.1.0
+    , containers
+    , data-default
+    , freer-extras
+    , freer-simple
+    , lens
+    , plutus-contract
+    , plutus-ledger
+    , plutus-tx
+    , proof-of-burn
+    , QuickCheck
+    , tasty
+    , tasty-hunit
+    , tasty-quickcheck
+    , text
   if !(impl(ghcjs) || os(ghcjs))
-    build-depends: plutus-tx-plugin -any
+    build-depends: plutus-tx-plugin

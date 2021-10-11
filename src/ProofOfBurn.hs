@@ -53,6 +53,7 @@ import Plutus.Contract
       utxosTxOutTxAt,
       collectFromScript,
       selectList,
+      tell,
       Endpoint,
       Contract,
       Promise,
@@ -64,6 +65,7 @@ import qualified PlutusTx.IsData  as PlutusTx
 import PlutusTx.Prelude
     ( otherwise,
       return,
+      (>>=),
       Bool(False),
       Maybe(..),
       Either(Right, Left),
@@ -158,6 +160,7 @@ burnerTypedValidator = Scripts.mkTypedValidator @Burner
 type Schema = Endpoint "lock"   (PubKeyHash, Value)        -- lock the value
           .\/ Endpoint "burn"   (BuiltinByteString, Value) -- burn the value
           .\/ Endpoint "burnedTrace"   BuiltinByteString   -- burn the value
+          .\/ Endpoint "burnedTraceWithAnswer" BuiltinByteString    -- burn the value and return result
           .\/ Endpoint "redeem" ()                         -- redeem the locked value
 
 burnerScript :: Plutus.Script
@@ -174,6 +177,9 @@ burnerSerialised = PlutusScriptSerialised burnerSBS
 
 contract :: Contract w Schema ContractError ()
 contract = selectList [lock, burn, burnedTrace, redeem] >> contract
+
+contract' :: Contract BurnedTraceAnswer Schema ContractError ()
+contract' = selectList [burnedTraceWithAnswer] >> contract'
 
 -- | The "lock" contract endpoint.
 --
@@ -230,12 +236,19 @@ redeem = endpoint @"redeem" $ \() -> do
    filterByPubKey :: PubKey -> (ChainIndexTxOut, ChainIndexTx) -> Bool
    filterByPubKey pubk txtpl = fmap fromMyDatum (getMyDatum txtpl) == Just (sha3_256 (getPubKeyHash (pubKeyHash pubk)))
 
+type BurnedTraceAnswer = Maybe Value
+
+burnedTrace' :: AsContractError e => BuiltinByteString -> Contract w Schema e BurnedTraceAnswer
+burnedTrace' aCommitment = do
+  burnedVal <- burned aCommitment
+  if | isZero burnedVal -> logInfo @Prelude.String "Nothing burned with given commitment" >> return Nothing
+     | otherwise        -> logInfo @Prelude.String ("Value burned with given commitment: "  <> Prelude.show (valueOf burnedVal "" "")) >> return (Just burnedVal)
 
 burnedTrace :: Promise w Schema ContractError ()
-burnedTrace = endpoint @"burnedTrace" $ \aCommitment -> do
-  burnedVal <- burned aCommitment
-  if | isZero burnedVal -> logInfo @Prelude.String "Nothing burned with given commitment"
-     | otherwise        -> logInfo @Prelude.String ("Value burned with given commitment: "  <> Prelude.show (valueOf burnedVal "" ""))
+burnedTrace = endpoint @"burnedTrace" $ void . burnedTrace'
+
+burnedTraceWithAnswer :: Promise (Maybe Value) Schema ContractError ()
+burnedTraceWithAnswer = endpoint @"burnedTraceWithAnswer" $ \aCommitment -> burnedTrace' aCommitment >>= tell
 
 -- | The "burned" confirmation endpoint.
 --
@@ -268,6 +281,9 @@ getMyDatum (ScriptChainIndexTxOut { _ciTxOutDatum = Right (Datum datum) }, _) =
 -- | Script endpoints available for calling the contract.
 endpoints :: Contract () Schema ContractError ()
 endpoints = contract
+
+endpoints' :: Contract BurnedTraceAnswer Schema ContractError ()
+endpoints' = contract'
 
 mkSchemaDefinitions ''Schema
 

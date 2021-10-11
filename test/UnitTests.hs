@@ -16,11 +16,10 @@ import           Ledger
 import           Ledger.Ada                 as Ada
 import           Plutus.Contract            as Contract
 import           Plutus.Contract.Test       as Test
-import           Plutus.Contract.Trace      as Emulator
 import           Plutus.Trace.Emulator      as Emulator
 import           Plutus.Trace.Emulator.Types (_ContractLog, cilMessage)
 import           PlutusTx.Prelude           hiding (Semigroup(..), check, elem)
-import           Prelude (elem, show, String)
+import           Prelude (elem, show, error, String)
 import           Wallet.Emulator.MultiAgent  (eteEvent)
 
 import           Test.Tasty
@@ -41,6 +40,9 @@ tests = testGroup "unit tests"
     , testBurnAndBurnedTrace2
     , testBurnAndBurnedTrace3
     , testBurnAndBurnedTrace4
+    , testBurnAndBurnedTrace5
+    , testBurnedTwice1
+    , testBurnedTwice2
     , testBurnBurnedTraceAndRedeem
     , testLockBurnRedeem
     ]
@@ -258,16 +260,42 @@ testBurnAndBurnedTrace4 = check "burn and burnedTrace 4"
     do
         let burnedAddr      = getPubKeyHash $ pubKeyHash $ walletPubKey w3
             burnedAddrWrong = getPubKeyHash $ pubKeyHash $ walletPubKey w4
-        pob1 <- activateContractWallet w1 contract'
+        pob1 <- activateContractWallet w1 endpoints
         void $ Emulator.waitNSlots 2
         callEndpoint @"burn" pob1 (burnedAddr, Ada.lovelaceValueOf 50_000_000)
         void $ Emulator.waitNSlots 2
         --
-        pob2 <- activateContractWallet w2 contract'
+        pob2 <- activateContractWallet w2 endpoints
         void $ Emulator.waitNSlots 2
         callEndpoint @"burnedTrace" pob2 burnedAddrWrong
         void $ Emulator.waitNSlots 2
 
+-- | Test `burn` and `burnedTraceWithAnswer` endpoints in pair.
+--
+--   Check that PoB can burn value to some address.
+testBurnAndBurnedTrace5 :: TestTree
+testBurnAndBurnedTrace5 = check "burn and burnedTrace 5"
+    (     walletFundsChange w1 (Ada.lovelaceValueOf (-50_000_000))
+     .&&. walletFundsChange w2 (Ada.lovelaceValueOf 0)
+     .&&. walletFundsChange w3 (Ada.lovelaceValueOf 0)
+     .&&. assertInstanceLog (Emulator.walletInstanceTag w2) ((elem (burnedLogMsg 50_000_000)) . mapMaybe (preview (eteEvent . cilMessage . _ContractLog)))
+     .&&. assertNoFailedTransactions
+    )
+    do
+        let burnedAddr = getPubKeyHash $ pubKeyHash $ walletPubKey w3
+        pob1 <- activateContractWallet w1 endpoints
+        void $ Emulator.waitNSlots 2
+        callEndpoint @"burn" pob1 (burnedAddr, Ada.lovelaceValueOf 50_000_000)
+        void $ Emulator.waitNSlots 2
+        --
+        pob2 <- activateContractWallet w2 endpoints'
+        void $ Emulator.waitNSlots 2
+        callEndpoint @"burnedTraceWithAnswer" pob2 burnedAddr
+        void $ Emulator.waitNSlots 2
+        observableState pob2 >>= \case
+            -- TODO what function to use instead of `Prelude.error` in EmulatorTrace monad?
+            Nothing  -> Prelude.error "Must return traced value"
+            Just val -> when ((Ada.lovelaceValueOf 50_000_000) /= val) $ Prelude.error ("Must be 50 ADA, but got: " ++ show val)
 
 -- | Test `burn`, `burnedTrace`, `redeem` endpoints in pair.
 --
@@ -300,6 +328,50 @@ testBurnBurnedTraceAndRedeem = check "burn, burnedTrace and redeem"
   where
     contractErrorPredicate (OtherError "No UTxO to redeem from") = True
     contractErrorPredicate _ = False
+
+-- | Test `burn`'ing to same address gives the sum.
+--
+testBurnedTwice1 :: TestTree
+testBurnedTwice1 = check "burn different values to same address"
+    (     walletFundsChange w1 (Ada.lovelaceValueOf (-50_000_000))
+     .&&. assertInstanceLog (Emulator.walletInstanceTag w1) ((elem (burnedLogMsg 50_000_000)) . mapMaybe (preview (eteEvent . cilMessage . _ContractLog)))
+     .&&. assertNoFailedTransactions
+    )
+    do
+        let burnedAddr = getPubKeyHash $ pubKeyHash $ walletPubKey w3
+        --
+        pob1 <- activateContractWallet w1 endpoints
+        void $ Emulator.waitNSlots 2
+        callEndpoint @"burn" pob1 (burnedAddr, Ada.lovelaceValueOf 15_000_000)
+        void $ Emulator.waitNSlots 2
+        callEndpoint @"burn" pob1 (burnedAddr, Ada.lovelaceValueOf 35_000_000)
+        void $ Emulator.waitNSlots 2
+        --
+        pob2 <- activateContractWallet w1 endpoints
+        callEndpoint @"burnedTrace" pob2 burnedAddr
+        void $ Emulator.waitNSlots 2
+
+-- | Test `burn`'ing same value to same address gives the double value.
+--
+testBurnedTwice2 :: TestTree
+testBurnedTwice2 = check "burn twice same values to same address"
+    (     walletFundsChange w1 (Ada.lovelaceValueOf (-50_000_000))
+     .&&. assertInstanceLog (Emulator.walletInstanceTag w1) ((elem (burnedLogMsg 50_000_000)) . mapMaybe (preview (eteEvent . cilMessage . _ContractLog)))
+     .&&. assertNoFailedTransactions
+    )
+    do
+        let burnedAddr = getPubKeyHash $ pubKeyHash $ walletPubKey w3
+        --
+        pob1 <- activateContractWallet w1 endpoints
+        void $ Emulator.waitNSlots 2
+        callEndpoint @"burn" pob1 (burnedAddr, Ada.lovelaceValueOf 25_000_000)
+        void $ Emulator.waitNSlots 2
+        callEndpoint @"burn" pob1 (burnedAddr, Ada.lovelaceValueOf 25_000_000)
+        void $ Emulator.waitNSlots 2
+        --
+        pob2 <- activateContractWallet w1 endpoints
+        callEndpoint @"burnedTrace" pob2 burnedAddr
+        void $ Emulator.waitNSlots 2
 
 
 -- | Test `lock`, `burn` and `redeem` endpoints in pair, making

@@ -36,8 +36,10 @@ import           Control.Monad             (void, when, forM)
 import           Control.Applicative       (liftA3)
 import Control.Lens ( foldOf, folded, Field1(_1), Field4(_4) )
 import           Data.Bits                 (xor)
+import           Data.Functor              (($>))
 import           Data.Char                 (ord, chr)
 import qualified Data.Aeson                as Aeson
+import           Data.Aeson.TH
 import           Data.Sequences            (snoc, unsnoc)
 import           Data.Maybe                (fromJust, catMaybes)
 import qualified Data.Map.Strict           as Map
@@ -81,7 +83,7 @@ import PlutusTx.Prelude
       BuiltinByteString,
       Eq((==)),
       Functor(fmap),
-      Semigroup((<>)) )
+      Semigroup((<>)), BuiltinString )
 import           PlutusTx.Builtins.Internal (BuiltinByteString(..))
 import           Ledger                    (Address(..), Datum(..), scriptAddress, datumHash)
 import           Ledger.AddressMap         (UtxoMap)
@@ -119,7 +121,6 @@ import           Cardano.Prelude ( Set, MonadError (throwError) )
 import qualified Data.Set as Set
 
 
-
 -- | Utxo datum holds either:
 --     * the hash of the address that can redeem the value, if it was locked;
 --     * the hash with the last bit flipped, if it was burned.
@@ -131,6 +132,48 @@ PlutusTx.unstableMakeIsData ''MyDatum
 newtype MyRedeemer = MyRedeemer { _nothing :: () }
 PlutusTx.makeLift ''MyRedeemer
 PlutusTx.unstableMakeIsData ''MyRedeemer
+
+
+data ContractAction = 
+    BurnedValueValidated (Maybe Value)
+  | BurnedValue          Value BuiltinByteString 
+  | LockedValue          Value BuiltinByteString 
+  | Redeemed             Value BuiltinByteString 
+  deriving Prelude.Show
+
+$(deriveJSON defaultOptions ''ContractAction)
+
+data ContractState = ContractStateAction ContractAction ContractState
+                   | None
+  deriving Prelude.Show
+
+$(deriveJSON defaultOptions ''ContractState)
+
+
+instance Prelude.Monoid ContractState where
+  mempty = None
+
+instance Prelude.Semigroup ContractState where
+  prevState <> (ContractStateAction a _s) = ContractStateAction a prevState
+  prevState <> None                       = prevState
+
+stateActions :: ContractState -> [ContractAction]
+stateActions None = []
+stateActions (ContractStateAction a s) = stateActions s <> [a]
+
+previousState :: ContractState -> ContractState
+previousState (ContractStateAction _ s) = s
+previousState None = None
+
+contractAction :: ContractState -> Maybe ContractAction
+contractAction (ContractStateAction a _) = Just a
+contractAction None = Nothing
+
+tellAction :: ContractAction -> Contract ContractState Schema e ()
+tellAction action = tell (ContractStateAction action None)
+
+
+
 
 {-# INLINABLE validateSpend #-}
 -- | Spending validator checks that hash of the redeeming address is the same as the Utxo datum.
@@ -159,8 +202,7 @@ burnerTypedValidator = Scripts.mkTypedValidator @Burner
 -- | The schema of the contract, with two endpoints.
 type Schema = Endpoint "lock"   (PubKeyHash, Value)        -- lock the value
           .\/ Endpoint "burn"   (BuiltinByteString, Value) -- burn the value
-          .\/ Endpoint "burnedTrace"   BuiltinByteString   -- burn the value
-          .\/ Endpoint "burnedTraceWithAnswer" BuiltinByteString    -- burn the value and return result
+          .\/ Endpoint "validateBurn"  BuiltinByteString   -- validate a burn
           .\/ Endpoint "redeem" ()                         -- redeem the locked value
 
 burnerScript :: Plutus.Script
@@ -175,35 +217,34 @@ burnerSBS = SBS.toShort . LBS.toStrict $ serialise burnerScript
 burnerSerialised :: PlutusScript PlutusScriptV1
 burnerSerialised = PlutusScriptSerialised burnerSBS
 
-contract :: Contract w Schema ContractError ()
-contract = selectList [lock, burn, burnedTrace, redeem] >> contract
-
-contract' :: Contract BurnedTraceAnswer Schema ContractError ()
-contract' = selectList [burnedTraceWithAnswer] >> contract'
+contract :: Contract ContractState Schema ContractError ()
+contract = selectList [lock, burn, validateBurn, redeem] >> contract
 
 -- | The "lock" contract endpoint.
 --
 --   Lock the value to the given addressee.
-lock :: AsContractError e => Promise w Schema e ()
+lock :: AsContractError e => Promise ContractState Schema e ()
 lock = endpoint @"lock" lock'
 
-lock' :: AsContractError e => (PubKeyHash, Value) -> Contract w Schema e ()
+lock' :: AsContractError e => (PubKeyHash, Value) -> Contract ContractState Schema e ()
 lock' (addr, lockedFunds) = do
     let hash = sha3_256 $ getPubKeyHash addr
     let tx = Constraints.mustPayToTheScript (MyDatum hash) lockedFunds
     void $ submitTxConstraints burnerTypedValidator tx
+    tellAction (LockedValue lockedFunds hash)
 
 -- | The "burn" contract endpoint.
 --
 --   Burn the value with the given commitment.
-burn :: AsContractError e => Promise w Schema e ()
+burn :: AsContractError e => Promise ContractState Schema e ()
 burn = endpoint @"burn" burn'
 
-burn' :: AsContractError e => (BuiltinByteString, Value) -> Contract w Schema e ()
+burn' :: AsContractError e => (BuiltinByteString, Value) -> Contract ContractState Schema e ()
 burn' (aCommitment, burnedFunds) = do
     let hash = flipCommitment $ sha3_256 aCommitment
     let tx = Constraints.mustPayToTheScript (MyDatum hash) burnedFunds
     void $ submitTxConstraints burnerTypedValidator tx
+    tellAction (BurnedValue burnedFunds hash)
 
 -- | Flip lowest bit in the commitment
 --
@@ -218,15 +259,18 @@ flipCommitment (BuiltinByteString bs) = BuiltinByteString $ do
 -- | The "redeem" contract endpoint.
 --
 --   Can redeem the value, if it was published, not burned.
-redeem :: Promise w Schema ContractError ()
+redeem :: Promise ContractState Schema ContractError ()
 redeem = endpoint @"redeem" $ \() -> do
     pubk <- ownPubKey
     unspentOutputs' <- utxosTxOutTxAt contractAddress
-    let relevantOutputs = Map.map Prelude.fst $ filterUTxOs unspentOutputs' (filterByPubKey pubk)
+    let relevantOutputs = filterUTxOs unspentOutputs' (filterByPubKey pubk)
+        funds = totalValue relevantOutputs
+        txInput = Map.map Prelude.fst $ relevantOutputs
     when (Map.null relevantOutputs) $ throwError (OtherError $ T.pack "No UTxO to redeem from")
     let redeemer = MyRedeemer ()
-        tx       = collectFromScript relevantOutputs redeemer
-    void $ submitTxConstraintsSpending burnerTypedValidator relevantOutputs tx
+        tx       = collectFromScript txInput redeemer
+    void $ submitTxConstraintsSpending burnerTypedValidator txInput tx
+    tellAction (Redeemed funds (getPubKeyHash $ pubKeyHash pubk))
  where
    filterUTxOs ::  Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx)
                 -> ((ChainIndexTxOut, ChainIndexTx) -> Bool)
@@ -238,17 +282,19 @@ redeem = endpoint @"redeem" $ \() -> do
 
 type BurnedTraceAnswer = Maybe Value
 
-burnedTrace' :: AsContractError e => BuiltinByteString -> Contract w Schema e BurnedTraceAnswer
-burnedTrace' aCommitment = do
+validateBurn' :: AsContractError e => BuiltinByteString -> Contract ContractState Schema e ()
+validateBurn' aCommitment = do
   burnedVal <- burned aCommitment
-  if | isZero burnedVal -> logInfo @Prelude.String "Nothing burned with given commitment" >> return Nothing
-     | otherwise        -> logInfo @Prelude.String ("Value burned with given commitment: "  <> Prelude.show (valueOf burnedVal "" "")) >> return (Just burnedVal)
+  if | isZero burnedVal -> do
+        logInfo @Prelude.String "Nothing burned with given commitment"
+        tellAction (BurnedValueValidated Nothing)
+     | otherwise        -> do
+        logInfo @Prelude.String ("Value burned with given commitment: "  <> Prelude.show (valueOf burnedVal "" ""))
+        tellAction (BurnedValueValidated (Just burnedVal))
 
-burnedTrace :: Promise w Schema ContractError ()
-burnedTrace = endpoint @"burnedTrace" $ void . burnedTrace'
 
-burnedTraceWithAnswer :: Promise (Maybe Value) Schema ContractError ()
-burnedTraceWithAnswer = endpoint @"burnedTraceWithAnswer" $ \aCommitment -> burnedTrace' aCommitment >>= tell
+validateBurn :: Promise ContractState Schema ContractError ()
+validateBurn = endpoint @"validateBurn" $ validateBurn'
 
 -- | The "burned" confirmation endpoint.
 --
@@ -259,15 +305,15 @@ burned aCommitment = do
     unspentOutputs :: Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx) <- utxosTxOutTxAt contractAddress
     return $ totalValue (withCommitment `Map.filter` unspentOutputs)
   where
-    -- | Total value of Utxos in a `UtxoMap`.
-    totalValue        :: Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx) -> Value
-    totalValue         = foldOf (folded . _1 . _ScriptChainIndexTxOut . _4)
     -- | Check if the given transaction output is commited to burn with the same hash as `aCommitment`.
     withCommitment    :: (ChainIndexTxOut, ChainIndexTx) -> Bool
     withCommitment txtpl = fmap fromMyDatum (getMyDatum txtpl) == Just commitmentHash
 
     commitmentHash = flipCommitment $ sha3_256 aCommitment
 
+-- | Total value of Utxos in a `UtxoMap`.
+totalValue :: Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx) -> Value
+totalValue = foldOf (folded . _1 . _ScriptChainIndexTxOut . _4)
 
 getMyDatum :: (ChainIndexTxOut, ChainIndexTx) -> Maybe MyDatum
 getMyDatum (PublicKeyChainIndexTxOut {}, _) = Nothing
@@ -279,11 +325,9 @@ getMyDatum (ScriptChainIndexTxOut { _ciTxOutDatum = Right (Datum datum) }, _) =
 
 
 -- | Script endpoints available for calling the contract.
-endpoints :: Contract () Schema ContractError ()
+endpoints :: Contract ContractState Schema ContractError ()
 endpoints = contract
 
-endpoints' :: Contract BurnedTraceAnswer Schema ContractError ()
-endpoints' = contract'
 
 mkSchemaDefinitions ''Schema
 

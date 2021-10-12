@@ -25,7 +25,8 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
         libsodium-dev \
         libsystemd-dev \
         bc \
-        tar && \
+        tar \
+        xxd && \
     rm -rf /var/lib/apt/lists/*
 
 ARG GHCUP_VERSION=0.1.17.1

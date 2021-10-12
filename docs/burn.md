@@ -155,7 +155,7 @@ source ~/.ghcup/env
 Build the Plutus script:
 
 ``` {.sh}
-cabal run plutus-burner -- 42 out/result.plutus
+cabal run plutus-burner
 ```
 
 Start the containers with cardano-node and cardano-wallet:
@@ -174,7 +174,7 @@ Finally to restore wallet, this outputs the _wallet-id_ which we need for the fo
 If you want a random mnemonic phrase for testing, run `scripts/cardano-cli.sh 'cardano-address recovery-phrase generate'`
 
 ``` {.sh}
-scripts/cardano-cli.sh 'wallet.sh bootstrap_wallet <mnemonic sentence phrase> <password>'
+scripts/cardano-cli.sh 'wallet.sh bootstrap_wallet out/ "<mnemonic sentence phrase>" "<password>"'
 ```
 
 Afterwards you may burn your own money with:
@@ -234,6 +234,7 @@ burnAddress = do
 To see how it works, you may generate the burn address with:
 
 ``` {.haskell}
+export NETWORK=testnet
 cabal run generate-burn-address -- "mySecretCommitment"
 ```
 

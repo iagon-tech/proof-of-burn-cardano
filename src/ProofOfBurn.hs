@@ -1,12 +1,13 @@
 {-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE MagicHash                  #-}
 {-# LANGUAGE DeriveAnyClass             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE MagicHash                  #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE MultiWayIf                 #-}
 {-# LANGUAGE NamedFieldPuns             #-}
 {-# LANGUAGE NoImplicitPrelude          #-}
 {-# LANGUAGE OverloadedStrings          #-}
@@ -16,7 +17,6 @@
 {-# LANGUAGE TypeApplications           #-}
 {-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE TypeOperators              #-}
-{-# LANGUAGE MultiWayIf                 #-}
 
 {-# OPTIONS_GHC -fno-warn-unused-imports #-}
 {-# OPTIONS_GHC -fno-ignore-interface-pragmas #-}
@@ -30,7 +30,7 @@
 --   * burn - which burns the value instead of locking it.
 --
 --  In order to check that value was indeed burned, one needs to run a `burned` script with the same commitment value.
-module ProofOfBurn where 
+module ProofOfBurn where
 
 import           Control.Monad             (void, when, forM)
 import           Control.Applicative       (liftA3)
@@ -134,11 +134,11 @@ PlutusTx.makeLift ''MyRedeemer
 PlutusTx.unstableMakeIsData ''MyRedeemer
 
 
-data ContractAction = 
+data ContractAction =
     BurnedValueValidated (Maybe Value)
-  | BurnedValue          Value BuiltinByteString 
-  | LockedValue          Value BuiltinByteString 
-  | Redeemed             Value BuiltinByteString 
+  | BurnedValue          Value BuiltinByteString
+  | LockedValue          Value BuiltinByteString
+  | Redeemed             Value BuiltinByteString
   deriving Prelude.Show
 
 $(deriveJSON defaultOptions ''ContractAction)
@@ -172,9 +172,6 @@ contractAction None = Nothing
 tellAction :: ContractAction -> Contract ContractState Schema e ()
 tellAction action = tell (ContractStateAction action None)
 
-
-
-
 {-# INLINABLE validateSpend #-}
 -- | Spending validator checks that hash of the redeeming address is the same as the Utxo datum.
 validateSpend :: ValidatorType Burner
@@ -200,10 +197,10 @@ burnerTypedValidator = Scripts.mkTypedValidator @Burner
     wrap = Scripts.wrapValidator @MyDatum @MyRedeemer
 
 -- | The schema of the contract, with two endpoints.
-type Schema = Endpoint "lock"   (PubKeyHash, Value)        -- lock the value
-          .\/ Endpoint "burn"   (BuiltinByteString, Value) -- burn the value
-          .\/ Endpoint "validateBurn"  BuiltinByteString   -- validate a burn
-          .\/ Endpoint "redeem" ()                         -- redeem the locked value
+type Schema = Endpoint "lock"          (PubKeyHash, Value)        -- lock the value
+          .\/ Endpoint "burn"          (BuiltinByteString, Value) -- burn the value
+          .\/ Endpoint "validateBurn"  BuiltinByteString          -- validate a burn
+          .\/ Endpoint "redeem"        ()                         -- redeem the locked value
 
 burnerScript :: Plutus.Script
 burnerScript = Plutus.unValidatorScript burnerValidator
@@ -279,8 +276,6 @@ redeem = endpoint @"redeem" $ \() -> do
 
    filterByPubKey :: PubKey -> (ChainIndexTxOut, ChainIndexTx) -> Bool
    filterByPubKey pubk txtpl = fmap fromMyDatum (getMyDatum txtpl) == Just (sha3_256 (getPubKeyHash (pubKeyHash pubk)))
-
-type BurnedTraceAnswer = Maybe Value
 
 validateBurn' :: AsContractError e => BuiltinByteString -> Contract ContractState Schema e ()
 validateBurn' aCommitment = do

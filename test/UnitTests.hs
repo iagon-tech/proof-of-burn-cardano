@@ -63,6 +63,7 @@ testLock = check "lock"
         callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 50_000_000)
         void $ Emulator.waitNSlots 2
 
+
 -- | Test `lock` endpoint.
 --
 --   Just call `lock` two times and ensure balance changed.
@@ -117,6 +118,7 @@ testLockAndRedeem1 = check "lock and redeem 1"
         void $ Emulator.waitNSlots 2
         callEndpoint @"redeem" pob2 ()
         void $ Emulator.waitNSlots 2
+
 
 -- | Test `lock` and `redeem` endpoints in pair.
 --
@@ -270,6 +272,7 @@ testBurnAndBurnedTrace4 = check "burn and validateBurn 4"
         callEndpoint @"validateBurn" pob2 burnedAddrWrong
         void $ Emulator.waitNSlots 2
 
+
 -- | Test `burn` and `validateBurnWithAnswer` endpoints in pair.
 --
 --   Check that PoB can burn value to some address.
@@ -294,7 +297,7 @@ testBurnAndBurnedTrace5 = check "burn and validateBurn 5"
         void $ Emulator.waitNSlots 2
         observableState pob2 >>= \case
             ContractStateAction (BurnedValueValidated (Just val)) _
-              -> when ((Ada.lovelaceValueOf 50_000_000) /= val) $ Emulator.throwError (GenericError $ "Must be 50 ADA, but got: " ++ show val)
+               -> when ((Ada.lovelaceValueOf 50_000_000) /= val) $ Emulator.throwError (GenericError $ "Must be 50 ADA, but got: " ++ show val)
             _  -> Emulator.throwError (GenericError "Must return traced value")
 
 -- | Test `burn`, `validateBurn`, `redeem` endpoints in pair.
@@ -328,6 +331,7 @@ testBurnBurnedTraceAndRedeem = check "burn, validateBurn and redeem"
   where
     contractErrorPredicate (OtherError "No UTxO to redeem from") = True
     contractErrorPredicate _ = False
+
 
 -- | Test `burn`'ing to same address gives the sum.
 --

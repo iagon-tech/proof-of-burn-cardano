@@ -4,6 +4,7 @@ subtitle: Exploring Cardano in Alonzo era
 author:
   - Michał J. Gajda
   - Julian Ospald
+  - Dmitry Krylov
 bibliography: burn.bib
 ---
 
@@ -248,6 +249,132 @@ In order to verify the burn you need to check transactions sent to the burn addr
 ``` {.haskell}
 scripts/cardano-cli.sh 'wallet.sh get_utxo <burn-address> | jq .'
 ```
+
+# Smart contract testing
+
+
+The Plutus platform has good support for automatic testing.
+
+At first, the Plutus platform supports smart contract unit testing using the `EmulatorTrace` monad.
+This monad allows to call smart contract in the testing environment and supports trace of wallet balances changes.
+So a developer can write testing scenarios like this:
+
+
+``` {.haskell}
+tests :: TestTree
+tests = testGroup "unit tests" [ testLockAndRedeem ]
+
+testLockAndRedeem :: TestTree
+testLockAndRedeem = checkPredicate "lock and redeem"
+  (     walletFundsChange w1 (Ada.adaValueOf (-50))
+   .&&. walletFundsChange w2 (Ada.adaValueOf   50)
+   .&&. walletFundsChange w3 (Ada.adaValueOf    0)
+  )
+  do
+    h1 <- activateContractWallet w1 contract
+    Emulator.waitNSlots 1
+    let toAddr = pubKeyHash $ walletPubKey w2
+    callEndpoint @"lock" h1 (toAddr, adaValueOf 50)
+    Emulator.waitNSlots 1
+    h2 <- activateContractWallet w2 contract
+    Emulator.waitNSlots 1
+    callEndpoint @"redeem" h2 ()
+    Emulator.waitNSlots 1
+```
+
+Here one makes an instance `h1` of smart contract, then call `lock` endpoint with wallet `w2` and value (50 Ada),
+then one calls `redeem` (with another instance `h2`).
+After the end of the test scenario `checkPredicate` checks that provided the predicate
+is true, i.e. the balance of wallet `w1` is decreased by 50 Ada,
+`w2` is increased by 50 Ada, and the balance of untouched wallet `w3` is unchanged.
+
+We provided unit tests for our proof-of-burn contract in [UnitTests.hs](../test/UnitTests.hs).
+
+But main power testing feature of the Plutus platform is a *property-based testing*.
+
+Plutus platform property-based testing allows to generate a bunch of random scenarios (with specified properties) for interacting with the smart contract under test.
+And then run them to check that these scenarios work as expected.
+
+So developers have to specify simple interact actions, for example:
+
+
+``` {.haskell}
+data Action POBModel
+  = Lock         Wallet Wallet Ada
+    -- ^ lock somve value from one wallet to another
+  | Redeem              Wallet
+    -- ^ redeem all locked values for specified wallet
+  | Burn         Wallet Wallet Ada
+    -- ^ burn some value
+  | ValidateBurn Wallet Wallet
+    -- ^ check that wallet make burn with commitement
+```
+
+Now Plutus platform can generate random sequence (with specified properties)
+like `[Lock w1 w2 10, Lock w3 w1 20, Redeem w2, Burn w3 "h@ck_me" 50]`.
+
+Each generated sequence run in two processes: first is *simulation*, second is running smart contract (under emulator in
+`EmulatorTrace` monad). For example, simulated run of `Lock` action is:
+
+``` {.haskell}
+nextState (Lock wFrom wTo v) = do
+  withdraw wFrom (Ada.lovelaceValueOf v)
+  (pobLocks . at wTo) $~ (Just . maybe v (+v))
+  wait 1
+```
+
+Here we just mark that value `v` withdrawn from simulated wallet `wFrom` and mark that it locked in favor of the wallet
+`wTo`.
+
+Simultaneously, the tester also runs the smart contract for this `Lock` action:
+
+``` {.haskell}
+perform h _modelState = \case
+  (Lock wFrom wTo val) -> do
+    let toAddr = pubKeyHash $ walletPubKey wTo
+    callEndpoint @"lock" (h $ POBKey wFrom) (toAddr, toValue val)
+    waitNSlots 1
+```
+
+After each run, the platform check that the simulation results match those on the actual run.
+Particularly, it checks that simulated and real balances match. In our example, it checks that
+simulated balance after `withdraw` matches with balance after `callEndpoint @"lock"` runned in `EmulatorTrace` monad.
+
+All previously described Plutus platform testing abilities combined into one: *dynamic logic test scenarios* which lets
+freely mix specific and random action sequences. For example:
+
+``` {.haskell}
+lockTest :: DL POBModel ()
+lockTest = do
+  action $ Lock w1 w2 20
+  action $ Lock w3 w2 30
+  action $ Redeem w2
+  assertModel "at least 50 lovelaces must be redeemed"
+              (redeemedFor w2 > 50)
+```
+
+Here we execute several random actions and then check that after some locks several Adas will be redeemed.
+
+An important feature of DL test script running is the output of erroneous action sequence. For example, in early
+stage of testing our proof-of-burn contract, we discovered a faulty sequence (which we then fixed, but left
+on our test list):
+
+``` {.haskell}
+prop_GetObservableStateDon'tBreakEmulator :: Property
+prop_GetObservableStateDon'tBreakEmulator =
+  withMaxSuccess 1 $
+  withDLTest anyActions_ mkPropForActions $
+  DLScript
+    [ Do $ ValidateBurn w1 w2
+    , Do $ Burn         w1 w2 10000
+    , Do $ Lock         w1 w2 20000
+    ]
+```
+
+Here `DLScript [...]` is (slightly corrected) output of the Plutus platform runner.
+
+Thus, using the platform's extensive testing capabilities, we checked
+the performance of our application and identified and corrected significant bugs.
 
 # Conclusion
 

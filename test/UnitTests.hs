@@ -30,7 +30,7 @@ import           ProofOfBurn
 tests :: TestTree
 tests = testGroup "unit tests"
     [ testLock
-    , testLockTwoTimes
+    , testLockTwice
     , testRedeem
     , testLockAndRedeem1
     , testLockAndRedeem2
@@ -59,15 +59,16 @@ testLock = check "lock"
     )
     do
         pob1 <- activateContractWallet w1 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 50_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
+
 
 -- | Test `lock` endpoint.
 --
 --   Just call `lock` two times and ensure balance changed.
-testLockTwoTimes :: TestTree
-testLockTwoTimes = check "lock"
+testLockTwice :: TestTree
+testLockTwice = check "lock twice"
     (     walletFundsChange w1 (Ada.lovelaceValueOf (-50_000_000))
      .&&. walletFundsChange w2 (Ada.lovelaceValueOf 0)
      .&&. walletFundsChange w3 (Ada.lovelaceValueOf 0)
@@ -75,11 +76,11 @@ testLockTwoTimes = check "lock"
     do
         pob1 <- activateContractWallet w1 endpoints
 
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 20_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 30_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
 
 
 -- | Test `redeem` endpoint.
@@ -94,9 +95,9 @@ testRedeem = check "redeem"
     )
     do
         pob2 <- activateContractWallet w2 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"redeem" pob2 ()
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
 
 
 -- | Test `lock` and `redeem` endpoints in pair.
@@ -110,13 +111,14 @@ testLockAndRedeem1 = check "lock and redeem 1"
     )
     do
         pob1 <- activateContractWallet w1 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 50_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         pob2 <- activateContractWallet w2 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"redeem" pob2 ()
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
+
 
 -- | Test `lock` and `redeem` endpoints in pair.
 --
@@ -131,13 +133,13 @@ testLockAndRedeem2 = check "lock and redeem 2"
         pob1 <- activateContractWallet w1 endpoints
         pob2 <- activateContractWallet w3 endpoints
         pob3 <- activateContractWallet w1 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         --
         callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 50_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         --
         callEndpoint @"lock" pob2 (pubKeyHash $ walletPubKey w1, Ada.lovelaceValueOf 50_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         --
         callEndpoint @"redeem" pob3 ()
         void $ Emulator.waitNSlots 5
@@ -152,7 +154,7 @@ testLockAndRedeemOurselves = check "lock and redeem ourselves"
     )
     do
         h1 <- activateContractWallet w1 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         --
         callEndpoint @"lock" h1 (pubKeyHash $ walletPubKey w1, Ada.lovelaceValueOf 50_000_000)
         void $ Emulator.waitNSlots 5
@@ -169,16 +171,16 @@ testLockTwiceAndRedeem  = check "lock twice and redeem"
     )
     do
         pob1 <- activateContractWallet w1 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 20_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         -- Repeat `lock` on same contract
         callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.lovelaceValueOf 30_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         pob3 <- activateContractWallet w2 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"redeem" pob3 ()
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
 
 
 -- | Test `burn` and `validateBurn` endpoints in pair.
@@ -192,13 +194,13 @@ testBurnAndBurnedTrace1 = check "burn and validateBurn 1"
     )
     do
         pob1 <- activateContractWallet w1 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"burn" pob1 ("ab", Ada.lovelaceValueOf 50_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         --
         pob2 <- activateContractWallet w1 endpoints
         callEndpoint @"validateBurn" pob2 "ab"
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
 
 
 -- | Test `burn` and `validateBurn` endpoints in pair.
@@ -215,14 +217,14 @@ testBurnAndBurnedTrace2 = check "burn and validateBurn 2"
     do
         let burnedAddr = getPubKeyHash $ pubKeyHash $ walletPubKey w3
         pob1 <- activateContractWallet w1 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"burn" pob1 (burnedAddr, Ada.lovelaceValueOf 50_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         --
         pob2 <- activateContractWallet w2 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"validateBurn" pob2 burnedAddr
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
 
 
 -- | Test `burn` and `validateBurn` endpoints in pair.
@@ -236,14 +238,14 @@ testBurnAndBurnedTrace3 = check "burn and validateBurn 3"
     )
     do
         pob1 <- activateContractWallet w1 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"burn" pob1 ("ab", Ada.lovelaceValueOf 50_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         --
         pob2 <- activateContractWallet w1 endpoints
         -- TODO check answer
         callEndpoint @"validateBurn" pob2 "bc"
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
 
 
 -- | Test `burn` and `validateBurn` endpoints in pair.
@@ -261,14 +263,15 @@ testBurnAndBurnedTrace4 = check "burn and validateBurn 4"
         let burnedAddr      = getPubKeyHash $ pubKeyHash $ walletPubKey w3
             burnedAddrWrong = getPubKeyHash $ pubKeyHash $ walletPubKey w4
         pob1 <- activateContractWallet w1 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"burn" pob1 (burnedAddr, Ada.lovelaceValueOf 50_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         --
         pob2 <- activateContractWallet w2 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"validateBurn" pob2 burnedAddrWrong
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
+
 
 -- | Test `burn` and `validateBurnWithAnswer` endpoints in pair.
 --
@@ -284,17 +287,17 @@ testBurnAndBurnedTrace5 = check "burn and validateBurn 5"
     do
         let burnedAddr = getPubKeyHash $ pubKeyHash $ walletPubKey w3
         pob1 <- activateContractWallet w1 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"burn" pob1 (burnedAddr, Ada.lovelaceValueOf 50_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         --
         pob2 <- activateContractWallet w2 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"validateBurn" pob2 burnedAddr
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         observableState pob2 >>= \case
             ContractStateAction (BurnedValueValidated (Just val)) _
-              -> when ((Ada.lovelaceValueOf 50_000_000) /= val) $ Emulator.throwError (GenericError $ "Must be 50 ADA, but got: " ++ show val)
+               -> when ((Ada.lovelaceValueOf 50_000_000) /= val) $ Emulator.throwError (GenericError $ "Must be 50 ADA, but got: " ++ show val)
             _  -> Emulator.throwError (GenericError "Must return traced value")
 
 -- | Test `burn`, `validateBurn`, `redeem` endpoints in pair.
@@ -311,23 +314,24 @@ testBurnBurnedTraceAndRedeem = check "burn, validateBurn and redeem"
     do
         let burnedAddr = getPubKeyHash $ pubKeyHash $ walletPubKey w3
         pob1 <- activateContractWallet w1 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"burn" pob1 (burnedAddr, Ada.lovelaceValueOf 50_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         --
         pob2 <- activateContractWallet w2 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         -- TODO check answer
         callEndpoint @"validateBurn" pob2 burnedAddr
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         --
         pob3 <- activateContractWallet w3 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"redeem" pob3 ()
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
   where
     contractErrorPredicate (OtherError "No UTxO to redeem from") = True
     contractErrorPredicate _ = False
+
 
 -- | Test `burn`'ing to same address gives the sum.
 --
@@ -341,15 +345,15 @@ testBurnedTwice1 = check "burn different values to same address"
         let burnedAddr = getPubKeyHash $ pubKeyHash $ walletPubKey w3
         --
         pob1 <- activateContractWallet w1 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"burn" pob1 (burnedAddr, Ada.lovelaceValueOf 15_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"burn" pob1 (burnedAddr, Ada.lovelaceValueOf 35_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         --
         pob2 <- activateContractWallet w1 endpoints
         callEndpoint @"validateBurn" pob2 burnedAddr
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
 
 -- | Test `burn`'ing same value to same address gives the double value.
 --
@@ -363,15 +367,15 @@ testBurnedTwice2 = check "burn twice same values to same address"
         let burnedAddr = getPubKeyHash $ pubKeyHash $ walletPubKey w3
         --
         pob1 <- activateContractWallet w1 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"burn" pob1 (burnedAddr, Ada.lovelaceValueOf 25_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"burn" pob1 (burnedAddr, Ada.lovelaceValueOf 25_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         --
         pob2 <- activateContractWallet w1 endpoints
         callEndpoint @"validateBurn" pob2 burnedAddr
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
 
 
 -- | Test `lock`, `burn` and `redeem` endpoints in pair, making
@@ -387,21 +391,21 @@ testLockBurnRedeem = check "lock, burn and redeem"
         let burnedAddr = pubKeyHash $ walletPubKey w3
         --
         pob1 <- activateContractWallet w1 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"burn" pob1 (getPubKeyHash burnedAddr, Ada.lovelaceValueOf 50_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"lock" pob1 (burnedAddr, Ada.lovelaceValueOf 30_000_000)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         --
         pob2 <- activateContractWallet w2 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"validateBurn" pob2 (getPubKeyHash burnedAddr)
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         --
         pob3 <- activateContractWallet w3 endpoints
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
         callEndpoint @"redeem" pob3 ()
-        void $ Emulator.waitNSlots 2
+        void $ Emulator.waitNSlots 1
 
 
 -- | The message appeared in a smart contract log about successful burning tracing.

@@ -60,7 +60,7 @@ testLock = check "lock"
     do
         pob1 <- activateContractWallet w1 endpoints
         void $ Emulator.waitNSlots 1
-        callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.adaValueOf 50)
+        callEndpoint @"lock" pob1 (walletPubKeyHash w2, Ada.adaValueOf 50)
         void $ Emulator.waitNSlots 1
 
 
@@ -76,9 +76,9 @@ testLockTwice = check "lock twice"
     do
         pob1 <- activateContractWallet w1 endpoints
         void $ Emulator.waitNSlots 1
-        callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.adaValueOf 20)
+        callEndpoint @"lock" pob1 (walletPubKeyHash w2, Ada.adaValueOf 20)
         void $ Emulator.waitNSlots 1
-        callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.adaValueOf 30)
+        callEndpoint @"lock" pob1 (walletPubKeyHash w2, Ada.adaValueOf 30)
         void $ Emulator.waitNSlots 1
 
 
@@ -111,7 +111,7 @@ testLockAndRedeem1 = check "lock and redeem 1"
     do
         pob1 <- activateContractWallet w1 endpoints
         void $ Emulator.waitNSlots 1
-        callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.adaValueOf 50)
+        callEndpoint @"lock" pob1 (walletPubKeyHash w2, Ada.adaValueOf 50)
         void $ Emulator.waitNSlots 1
         pob2 <- activateContractWallet w2 endpoints
         void $ Emulator.waitNSlots 1
@@ -134,10 +134,10 @@ testLockAndRedeem2 = check "lock and redeem 2"
         pob3 <- activateContractWallet w1 endpoints
         void $ Emulator.waitNSlots 1
         --
-        callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.adaValueOf 50)
+        callEndpoint @"lock" pob1 (walletPubKeyHash w2, Ada.adaValueOf 50)
         void $ Emulator.waitNSlots 1
         --
-        callEndpoint @"lock" pob2 (pubKeyHash $ walletPubKey w1, Ada.adaValueOf 50)
+        callEndpoint @"lock" pob2 (walletPubKeyHash w1, Ada.adaValueOf 50)
         void $ Emulator.waitNSlots 1
         --
         callEndpoint @"redeem" pob3 ()
@@ -155,7 +155,7 @@ testLockAndRedeemOurselves = check "lock and redeem ourselves"
         h1 <- activateContractWallet w1 endpoints
         void $ Emulator.waitNSlots 1
         --
-        callEndpoint @"lock" h1 (pubKeyHash $ walletPubKey w1, Ada.adaValueOf 50)
+        callEndpoint @"lock" h1 (walletPubKeyHash w1, Ada.adaValueOf 50)
         void $ Emulator.waitNSlots 5
         --
         callEndpoint @"redeem" h1 ()
@@ -171,10 +171,10 @@ testLockTwiceAndRedeem  = check "lock twice and redeem"
     do
         pob1 <- activateContractWallet w1 endpoints
         void $ Emulator.waitNSlots 1
-        callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.adaValueOf 20)
+        callEndpoint @"lock" pob1 (walletPubKeyHash w2, Ada.adaValueOf 20)
         void $ Emulator.waitNSlots 1
         -- Repeat `lock` on same contract
-        callEndpoint @"lock" pob1 (pubKeyHash $ walletPubKey w2, Ada.adaValueOf 30)
+        callEndpoint @"lock" pob1 (walletPubKeyHash w2, Ada.adaValueOf 30)
         void $ Emulator.waitNSlots 1
         pob3 <- activateContractWallet w2 endpoints
         void $ Emulator.waitNSlots 1
@@ -214,7 +214,7 @@ testBurnAndValidateBurn2 = check "burn and validateBurn 2"
      .&&. assertNoFailedTransactions
     )
     do
-        let burnedAddr = getPubKeyHash $ pubKeyHash $ walletPubKey w3
+        let burnedAddr = getPubKeyHash $ walletPubKeyHash w3
         pob1 <- activateContractWallet w1 endpoints
         void $ Emulator.waitNSlots 1
         callEndpoint @"burn" pob1 (burnedAddr, Ada.adaValueOf 50)
@@ -259,8 +259,8 @@ testBurnAndValidateBurn4 = check "burn and validateBurn 4"
      .&&. assertNoFailedTransactions
     )
     do
-        let burnedAddr      = getPubKeyHash $ pubKeyHash $ walletPubKey w3
-            burnedAddrWrong = getPubKeyHash $ pubKeyHash $ walletPubKey w4
+        let burnedAddr      = getPubKeyHash $ walletPubKeyHash w3
+            burnedAddrWrong = getPubKeyHash $ walletPubKeyHash w4
         pob1 <- activateContractWallet w1 endpoints
         void $ Emulator.waitNSlots 1
         callEndpoint @"burn" pob1 (burnedAddr, Ada.adaValueOf 50)
@@ -284,7 +284,7 @@ testBurnAndValidateBurn5 = check "burn and validateBurn 5"
      .&&. assertNoFailedTransactions
     )
     do
-        let burnedAddr = getPubKeyHash $ pubKeyHash $ walletPubKey w3
+        let burnedAddr = getPubKeyHash $ walletPubKeyHash w3
         pob1 <- activateContractWallet w1 endpoints
         void $ Emulator.waitNSlots 1
         callEndpoint @"burn" pob1 (burnedAddr, Ada.adaValueOf 50)
@@ -311,7 +311,7 @@ testBurnBurnedTraceAndRedeem = check "burn, validateBurn and redeem"
      .&&. assertContractError endpoints (Emulator.walletInstanceTag w3) contractErrorPredicate ""
     )
     do
-        let burnedAddr = getPubKeyHash $ pubKeyHash $ walletPubKey w3
+        let burnedAddr = getPubKeyHash $ walletPubKeyHash w3
         pob1 <- activateContractWallet w1 endpoints
         void $ Emulator.waitNSlots 1
         callEndpoint @"burn" pob1 (burnedAddr, Ada.adaValueOf 50)
@@ -341,7 +341,7 @@ testBurnedTwice1 = check "burn different values to same address"
      .&&. assertNoFailedTransactions
     )
     do
-        let burnedAddr = getPubKeyHash $ pubKeyHash $ walletPubKey w3
+        let burnedAddr = getPubKeyHash $ walletPubKeyHash w3
         --
         pob1 <- activateContractWallet w1 endpoints
         void $ Emulator.waitNSlots 1
@@ -363,7 +363,7 @@ testBurnedTwice2 = check "burn twice same values to same address"
      .&&. assertNoFailedTransactions
     )
     do
-        let burnedAddr = getPubKeyHash $ pubKeyHash $ walletPubKey w3
+        let burnedAddr = getPubKeyHash $ walletPubKeyHash w3
         --
         pob1 <- activateContractWallet w1 endpoints
         void $ Emulator.waitNSlots 1
@@ -387,7 +387,7 @@ testLockBurnRedeem = check "lock, burn and redeem"
      .&&. assertInstanceLog (Emulator.walletInstanceTag w2) ((elem (burnedLogMsg 50_000_000)) . mapMaybe (preview (eteEvent . cilMessage . _ContractLog)))
     )
     do
-        let burnedAddr = pubKeyHash $ walletPubKey w3
+        let burnedAddr = walletPubKeyHash w3
         --
         pob1 <- activateContractWallet w1 endpoints
         void $ Emulator.waitNSlots 1

@@ -96,18 +96,18 @@ instance ContractModel POBModel where
 
     perform h ms = \case
         (Lock cid wFrom wTo val) -> do
-            callEndpoint @"lock"   (h $ POBKey cid wFrom) (pubKeyHash $ walletPubKey wTo, toValue val)
+            callEndpoint @"lock"   (h $ POBKey cid wFrom) (walletPubKeyHash wTo, toValue val)
             delay 1
         (Redeem cid wTo) -> do
             callEndpoint @"redeem" (h $ POBKey cid wTo) ()
             delay 1
         (Burn cid wFrom wTo val) -> do
-            callEndpoint @"burn" (h $ POBKey cid wFrom) (getPubKeyHash $ pubKeyHash $ walletPubKey wTo, toValue val)
+            callEndpoint @"burn" (h $ POBKey cid wFrom) (getPubKeyHash $ walletPubKeyHash wTo, toValue val)
             delay 1
         (ValidateBurn cid wFrom wTo) -> do
             let ch = h $ POBKey cid wFrom
                 (alreadyBurned :: Maybe Value) = toValue <$> (ms ^. contractState . pobBurns . at wTo)
-            callEndpoint @"validateBurn" ch (getPubKeyHash $ pubKeyHash $ walletPubKey wTo)
+            callEndpoint @"validateBurn" ch (getPubKeyHash $ walletPubKeyHash wTo)
             delay 1
             observableState ch >>= \case
                 ContractStateAction (BurnedValueValidated val) _ ->

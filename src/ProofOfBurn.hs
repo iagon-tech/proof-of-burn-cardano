@@ -48,7 +48,7 @@ import Plutus.Contract
     ( (>>),
       logInfo,
       endpoint,
-      ownPubKey,
+      ownPubKeyHash,
       submitTxConstraints,
       submitTxConstraintsSpending,
       utxosAt,
@@ -258,7 +258,7 @@ flipCommitment (BuiltinByteString bs) = BuiltinByteString $ do
 --   Can redeem the value, if it was published, not burned.
 redeem :: Promise ContractState Schema ContractError ()
 redeem = endpoint @"redeem" $ \() -> do
-    pubk <- ownPubKey
+    pubk <- ownPubKeyHash
     unspentOutputs' <- utxosTxOutTxAt contractAddress
     let relevantOutputs = filterUTxOs unspentOutputs' (filterByPubKey pubk)
         funds = totalValue relevantOutputs
@@ -267,15 +267,15 @@ redeem = endpoint @"redeem" $ \() -> do
     let redeemer = MyRedeemer ()
         tx       = collectFromScript txInput redeemer
     void $ submitTxConstraintsSpending burnerTypedValidator txInput tx
-    tellAction (Redeemed funds (getPubKeyHash $ pubKeyHash pubk))
+    tellAction (Redeemed funds (getPubKeyHash pubk))
  where
    filterUTxOs ::  Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx)
                 -> ((ChainIndexTxOut, ChainIndexTx) -> Bool)
                 -> Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx)
    filterUTxOs txMap p = flip Map.filter txMap p
 
-   filterByPubKey :: PubKey -> (ChainIndexTxOut, ChainIndexTx) -> Bool
-   filterByPubKey pubk txtpl = fmap fromMyDatum (getMyDatum txtpl) == Just (sha3_256 (getPubKeyHash (pubKeyHash pubk)))
+   filterByPubKey :: PubKeyHash -> (ChainIndexTxOut, ChainIndexTx) -> Bool
+   filterByPubKey pubk txtpl = fmap fromMyDatum (getMyDatum txtpl) == Just (sha3_256 (getPubKeyHash pubk))
 
 validateBurn' :: AsContractError e => BuiltinByteString -> Contract ContractState Schema e ()
 validateBurn' aCommitment = do

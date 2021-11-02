@@ -86,42 +86,62 @@ We provided unit tests for our proof-of-burn smart contract in
 
 # Dynamic-logic testing
 
-<!-- TODO
+Unit-test scenarious are hardwired (not changed its behaviour). But sometimes
+it is required to check smart contract properties on wide range of behaviours.
+For make it possible, Plutus platform have *dynamic logic testing* (or
+*property-based testing*). This feature allows to implement more complex test
+scenarious, first of all, tests with random-generated sequence of actions.
 
-6. After describing how the hard-wired test scenario works,
-   please describe why actions are needed:
-     a) why we use action data structure (to generate it automatically)
-     b) how to generate arbitrary scenarios as action lists
-     c) how do you assure that a series of actions is valid?
-8. At the end you should summarize what validation criteria we have for the smart contract of PoB.
+<!-- TODO: express in a more simple way; -->
 
--->
+Plutus platform dynamic logic testing allows to generate a bunch of random
+scenarios (with specified properties) for interacting with the smart contract
+under test. And then run them to check that these scenarios work as expected.
 
-But main power testing feature of the Plutus platform is a *property-based testing*.
-
-Plutus platform property-based testing allows to generate a bunch of random scenarios (with specified properties) for interacting with the smart contract under test.
-And then run them to check that these scenarios work as expected.
-
-So developers have to specify simple interact actions, for example:
+So developers have to specify basic actions for interact with script, for example:
 
 
 ``` {.haskell}
 data Action POBModel
   = Lock         Wallet Wallet Ada
-    -- ^ lock somve value from one wallet to another
-  | Redeem              Wallet
+    -- ^ lock some value from one wallet to another
+  | Redeem       Wallet
     -- ^ redeem all locked values for specified wallet
-  | Burn         Wallet Wallet Ada
-    -- ^ burn some value
-  | ValidateBurn Wallet Wallet
+  | Burn         Wallet ByteString Ada
+    -- ^ burn some value from wallet using commitement
+  | ValidateBurn Wallet ByteString
     -- ^ check that wallet make burn with commitement
 ```
 
+Proof-of-burn smart contract have four endpoints, so we introduce for actions,
+one action for each endpoint. We specify arguments for each endpoint in
+corresponded action, for example, for `lock` endpoint we specify the wallet to
+withdraw, the wallet to which funds will be sent after redeem and value.
+
 Now Plutus platform can generate random sequence (with specified properties)
 like `[Lock w1 w2 10, Lock w3 w1 20, Redeem w2, Burn w3 "h@ck_me" 50]`.
+It is specified in `arbitraryAction` function in `ContractModel` instance using
+common `QuickTest` functions:
 
-Each generated sequence run in two processes: first is *simulation*, second is running smart contract (under emulator in
-`EmulatorTrace` monad). For example, simulated run of `Lock` action is:
+``` {.haskell}
+arbitraryAction _modelState = oneof $
+  [ Lock         <$> genWallet <*> genWallet <*> genAda
+  , Redeem       <$> genWallet
+  , Burn         <$> genWallet <*> genByteString <*> genAda
+  , ValidateBurn <$> genWallet <*> genByteString
+  ]
+```
+
+Note that current model state is passed to this function, so we can generate
+actions in depends of this current state. This can be used in more complex test
+scenarios. For example, if in some smart contract it is necessary to do
+initialization first, we can check passed `modelState` and generate
+initialisation action; and then, when initialization occurs, we can generate all
+other actions.
+
+Each generated sequence run in two processes: first is *simulation*, second is
+running smart contract (under emulator in `EmulatorTrace` monad). For example,
+simulated run of `Lock` action is:
 
 ``` {.haskell}
 nextState (Lock wFrom wTo v) = do
@@ -130,8 +150,8 @@ nextState (Lock wFrom wTo v) = do
   wait 1
 ```
 
-Here we just mark that value `v` withdrawn from simulated wallet `wFrom` and mark that it locked in favor of the wallet
-`wTo`.
+Here we just mark that value `v` withdrawn from simulated wallet `wFrom` and
+mark that it locked in favor of the wallet `wTo`.
 
 Simultaneously, the tester also runs the smart contract for this `Lock` action:
 
@@ -143,12 +163,14 @@ perform h _modelState = \case
     waitNSlots 1
 ```
 
-After each run, the platform check that the simulation results match those on the actual run.
-Particularly, it checks that simulated and real balances match. In our example, it checks that
-simulated balance after `withdraw` matches with balance after `callEndpoint @"lock"` runned in `EmulatorTrace` monad.
+After each run, the platform check that the simulation results match those on
+the actual run.  Particularly, it checks that simulated and real balances match.
+In our example, it checks that simulated balance after `withdraw` matches with
+balance after `callEndpoint @"lock"` runned in `EmulatorTrace` monad.
 
-All previously described Plutus platform testing abilities combined into one: *dynamic logic test scenarios* which lets
-freely mix specific and random action sequences. For example:
+All previously described Plutus platform testing abilities combined into one:
+*dynamic logic test scenarios* which lets freely mix specific and random action
+sequences. For example:
 
 ``` {.haskell}
 lockTest :: DL POBModel ()
@@ -157,14 +179,15 @@ lockTest = do
   action $ Lock w3 w2 30
   action $ Redeem w2
   assertModel "at least 50 lovelaces must be redeemed"
-              (redeemedFor w2 > 50)
+              (\modelState -> redeemedFor modelState w2 > 50)
 ```
 
-Here we execute several random actions and then check that after some locks several Adas will be redeemed.
+Here we execute several random actions and then check that after some locks
+several Adas will be redeemed.
 
-An important feature of DL test script running is the output of erroneous action sequence. For example, in early
-stage of testing our proof-of-burn contract, we discovered a faulty sequence (which we then fixed, but left
-on our test list):
+An important feature of DL test script running is the output of erroneous action
+sequence. For example, in early stage of testing our proof-of-burn contract, we
+discovered a faulty sequence (which we then fixed, but left on our test list):
 
 ``` {.haskell}
 prop_GetObservableStateDon'tBreakEmulator :: Property
@@ -180,13 +203,52 @@ prop_GetObservableStateDon'tBreakEmulator =
 
 Here `DLScript [...]` is (slightly corrected) output of the Plutus platform runner.
 
+# Validation criteria for the Proof-of-burn smart contract
 
-# Comparison/Conclusion
+We develop some criteria presented by respective property test listed below:
 
-<!-- TODO D. Finalize with advantages of random testing. -->
+``` {.haskell}
+tests :: TestTree
+tests = testProperties "prop tests"
+    [ ("lock and then redeem",                  prop_LockAndRedeem)
+    , ("burn and then validate",                prop_BurnAndValidate)
+    , ("random actions is consistent",          prop_RandomActionsIsConsistent)
+    , ("burn validating in emulator is works",  prop_BurnValidatingInEmulatorIsWorks)
+    , ("observable state don't break emulator", prop_GetObservableStateDon'tBreakEmulator)
+    ]
+```
 
-Thus, using the platform's extensive testing capabilities, we checked the performance of
-our application and identified and corrected significant bugs.
+* `prop_LockAndRedeem` -- here we check that `redeem` gets all the means locked
+  with `lock` and that `burn` not interfere with this. To do this we first call
+  `lock`, then some arbitrary actions, then `redeem`, and then check that
+  redeemed expected value.
+* `prop_BurnAndVerify` -- similar to the previous one, but we check that
+  `lock`/`redeem` not interfere with `burn`/`validateBurn`.
+* `prop_RandomActionsIsConsistent` -- pure random actions. Our testing model
+  have internal checks and for any sequence of actions all this checks must be
+  passed.
+
+As stated earlier, dynamic logic test runner can output `DLTest` list of
+actions, where some failures occur. When we develop our proof-of-burn, we have
+faced with such issues and save this output to tests. So we have two of them:
+
+* `prop_BurnValidatingInEmulatorIsWorks` -- checks that `ValidateBurn` correctly
+  work in testing model.
+* `prop_GetObservableStateDon'tBreakEmulator` -- we seem to have encountered a
+  bug in the Plutus emulator, and here we check that our test model byepasses
+  it.
+
+# Conclusion
+
+As a quick design, developer can use common unit tests.
+
+But the greatest opportunities for testing is dynamic logic testing. It is
+requires to write instance of `ControlMonad` (and some auxilliary code), but
+then developers can write plentiful test scenarious, which allow developers to
+find more errors in smart contracts.
+
+Thus, using the Plutus platform's extensive testing capabilities, we checked the
+performance of our application and identified and corrected significant bugs.
 
 # Bibliography
 

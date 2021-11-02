@@ -18,8 +18,6 @@ The Plutus platform has good support for automatic testing.
 In this article we show how to make automatic test for smart contracts on example of our
 smart contract "proof of burn".  <!-- TODO link to PoB here -->
 
-
-
 The *burning* of cryptocurrencies and crypto tokens is sending them to a black hole address.
 The address with no access key to retrieve funds.
 At the same time, the public can verify that a burn took place, but only by knowing a "secret": the commitment value.
@@ -30,12 +28,58 @@ Burning in large amounts may cause deflationary pressure since it decreases the 
 
 <!-- TODO: more detail with less words -->
 
+Plutus platform supports common unit tests. Althoug unit test are suitable for
+basic testing, Plutus platform allow developer to write tests with semi-random
+behaviour (this called "dynamic logic tests"). Such tests combine hardwired and
+random generated scenarious.  This allows to find more bugs in smart contracts.
+
 # Unit testing
 
 <!--TODO-->
 
-B. Describe two main test scenarios and show hardwired test suite for it.
-   (Lock funds and redeem, or burn funds and prove they were burned.)
+At first, the Plutus platform supports smart contract unit testing using the
+`EmulatorTrace` monad. This monad allows to call smart contract in the testing
+environment. This monad also simulate wallets and trace of wallet balance
+changes. For example, if called smart contract sends money from one wallet to
+other, `EmulatorTrace` simulate both wallets, catch money movement and allow
+developer to check final balances on these wallets.
+
+Let's look at a code example:
+
+``` {.haskell .numberLines}
+testLockAndRedeem :: TestTree
+testLockAndRedeem = checkPredicate "lock and redeem"
+  (     walletFundsChange w1 (Ada.adaValueOf (-50))
+   .&&. walletFundsChange w2 (Ada.adaValueOf   50)
+   .&&. walletFundsChange w3 (Ada.adaValueOf    0)
+  )
+  do
+    hndl <- activateContractWallet w1 contract
+    Emulator.waitNSlots 1
+    let toAddr = pubKeyHash $ walletPubKey w2
+    callEndpoint @"lock" hnld (toAddr, adaValueOf 50)
+    Emulator.waitNSlots 1
+    callEndpoint @"redeem" hndl ()
+    Emulator.waitNSlots 1
+```
+
+Here we have post-check state in lines 3-5 and we have testing scenario itself
+in lines 8-14.
+
+In test scenario we first make an instance of our Proof-of-burn smart contrace bounded to `hndl` (line 8), then call `lock` endpoint in line 11.
+
+
+
+
+Here one makes an instance `h1` of smart contract, then call `lock` endpoint with wallet `w2` and value (50 Ada),
+then one calls `redeem` (with another instance `h2`).
+After the end of the test scenario `checkPredicate` checks that provided the predicate
+is true, i.e. the balance of wallet `w1` is decreased by 50 Ada,
+`w2` is increased by 50 Ada, and the balance of untouched wallet `w3` is unchanged.
+
+We provided unit tests for our proof-of-burn contract in [UnitTests.hs](../test/UnitTests.hs).
+
+
 
 # Random testing
 

@@ -1,8 +1,10 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE GADTs                 #-}
 {-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE RecordWildCards       #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TemplateHaskell       #-}
+{-# OPTIONS_GHC -fno-warn-orphans  #-}
 module PropTests where
 
 -- TODO:
@@ -11,11 +13,12 @@ module PropTests where
 -- 4. Lensify operations with states
 
 import           Control.Lens                       hiding (elements)
+import           Control.Applicative
 import           Control.Monad                      (void, when)
 import           Data.Default                       (Default (..))
 import           Data.Map                           (Map)
 import qualified Data.Map                           as Map
-import           Data.Maybe                         (isJust)
+import           Data.Maybe                         (isJust, fromMaybe)
 import           Ledger                             hiding (singleton)
 import           Ledger.Ada                         as Ada
 import           Plutus.Contract                    (ContractError)
@@ -56,7 +59,7 @@ instance ContractModel POBModel where
     data Action POBModel
         = Lock         ContractInstanceId Wallet Wallet Ada
         | Redeem       ContractInstanceId        Wallet
-        | Burn         ContractInstanceId Wallet Wallet Ada
+        | Burn         ContractInstanceId Wallet Wallet Ada -- TODO BYTESTRING!
         | ValidateBurn ContractInstanceId Wallet Wallet
         deriving (Show, Eq)
 
@@ -148,7 +151,6 @@ genWallet = elements wallets
 genAda :: Gen Ada
 genAda = (lovelaceOf . (+1)) <$> (getNonNegative <$> arbitrary)
 
---
 
 instanceSpec :: [ContractInstanceSpec POBModel]
 instanceSpec =
@@ -164,6 +166,7 @@ tests = testProperties "prop tests"
     [ ("burn validating in emulator is works",  prop_BurnValidatingInEmulatorIsWorks)
     , ("observable state don't break emulator", prop_GetObservableStateDon'tBreakEmulator)
     , ("random actions is consistent",          prop_RandomActionsIsConsistent)
+    , ("lock and then redeem",                  prop_LockAndRedeem)
     ]
 
 
@@ -190,6 +193,32 @@ prop_GetObservableStateDon'tBreakEmulator = withMaxSuccess 1 $ withDLTest anyAct
 
 prop_RandomActionsIsConsistent :: Property
 prop_RandomActionsIsConsistent = withMaxSuccess 100 $ forAllDL anyActions_ mkPropForActions
+
+instance Arbitrary (Action POBModel) where
+    arbitrary = arbitraryAction undefined
+
+prop_LockAndRedeem :: Property
+prop_LockAndRedeem = withMaxSuccess 10 $ forAllDL myTest mkPropForActions
+  where
+    myTest = do
+        action $ Lock (ContractInstanceId 1) w1 w2 20000
+        anyBurnValidateActions_
+        (alreadyBurned :: Ada) <- (\ms -> fromMaybe 0 $ (ms ^. contractState . pobBurns . at w2)) <$> getModelState
+        action $ Redeem (ContractInstanceId 2) w2
+        {-
+        -- TODO
+        assertModel "xxx" $ \modelState ->
+            let (Just bc) = fromValue <$> (modelState ^. balanceChanges . at w2)
+            in bc == Ada.lovelaceOf 20000 - alreadyBurned
+            -}
+    anyBurnValidateActions_ :: DL POBModel ()
+    anyBurnValidateActions_ = stopping <|> (anySpecifiedAction (liftA2 (||) isBurn isValidateBurn) >> anyBurnValidateActions_)
+    anySpecifiedAction :: (Action POBModel -> Bool) -> DL POBModel ()
+    anySpecifiedAction predicate = forAllQ (whereQ arbitraryQ predicate) >>= action
+    isBurn Burn{}                 = True
+    isBurn _                      = False
+    isValidateBurn ValidateBurn{} = True
+    isValidateBurn _              = False
 
 
 mkPropForActions :: Actions POBModel -> Property

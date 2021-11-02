@@ -145,9 +145,6 @@ genWallet = elements wallets
 genAda :: Gen Ada
 genAda = (lovelaceOf . (+1)) <$> (getNonNegative <$> arbitrary)
 
-genAda :: Gen Ada
-genAda = (lovelaceOf . (+1)) <$> (getNonNegative <$> arbitrary)
-
 --
 
 instanceSpec :: [ContractInstanceSpec POBModel]

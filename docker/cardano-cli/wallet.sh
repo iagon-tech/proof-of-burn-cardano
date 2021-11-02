@@ -604,7 +604,6 @@ bootstrap_wallet() {
 
 	(printf >&2 "Your wallet id is: ")
 	echo "$wallet_id"
-
 	unset _wallet wallet_id _state_dir foo
 }
 
@@ -673,8 +672,9 @@ send_funds() {
 	state_dir=$1
 	[ -e "${state_dir}" ] || die "state_dir doesn't exist!"
 
+	edo payment_address "${state_dir}/key.vkey" "${state_dir}/payment.addr"
+
 	json=$(coin_selection "$2" "$3" "$4")
-	echo $json
 	[ -n "${json}" ] || die "Could not perform coin selection"
 	# TODO: we just pick the first transaction
 	tx_hash=$(echo "$json" | jq -e -r '.inputs | .[0].id')

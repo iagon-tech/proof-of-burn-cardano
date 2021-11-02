@@ -54,32 +54,36 @@ testLockAndRedeem = checkPredicate "lock and redeem"
    .&&. walletFundsChange w3 (Ada.adaValueOf    0)
   )
   do
-    hndl <- activateContractWallet w1 contract
-    Emulator.waitNSlots 1
+    hndl1 <- activateContractWallet w1 contract
     let toAddr = pubKeyHash $ walletPubKey w2
-    callEndpoint @"lock" hnld (toAddr, adaValueOf 50)
+    callEndpoint @"lock" hnld1 (toAddr, adaValueOf 50)
     Emulator.waitNSlots 1
-    callEndpoint @"redeem" hndl ()
-    Emulator.waitNSlots 1
+    hndl2 <- activateContractWallet w2 contract
+    callEndpoint @"redeem" hndl2 ()
 ```
 
+In this test scenario we lock 50 ADA from simulated wallet `w1` in favour of
+other wallet `w2` and check that other (for example, `w3`) wallets are
+unchanged.
+
 Here we have post-check state in lines 3-5 and we have testing scenario itself
-in lines 8-14.
+in lines 8-13. All that executed by function `checkPredicate` (and we pass it
+name of test, predicate to post-checking and test scenario itself).
 
-In test scenario we first make an instance of our Proof-of-burn smart contrace bounded to `hndl` (line 8), then call `lock` endpoint in line 11.
+In test scenario we first make an instance `hndl1` of our proof-of-burn smart
+contrace bounded to simulated wallet `w1` (line 8), then call `lock` endpoint in
+line 10. We call this endpoint with two arguments: address where to send
+`toAddr` value `adaValueOf 50`. Then it is need to actualize changes in tested
+blockchain so we wait one tick in line 11. Then we make other smart contract
+instance bounded to simulated wallet `w2` (line 12) and call endpoint `redeem`.
+Test scenario is completed.
 
+Then the predicate in line 3-5 is checking. Here we make sure that balance of
+simulated wallet `w1` decreased by 50 ADA, balance of `w2` increased by 50 ADA
+and balance of `w3` remains the same.
 
-
-
-Here one makes an instance `h1` of smart contract, then call `lock` endpoint with wallet `w2` and value (50 Ada),
-then one calls `redeem` (with another instance `h2`).
-After the end of the test scenario `checkPredicate` checks that provided the predicate
-is true, i.e. the balance of wallet `w1` is decreased by 50 Ada,
-`w2` is increased by 50 Ada, and the balance of untouched wallet `w3` is unchanged.
-
-We provided unit tests for our proof-of-burn contract in [UnitTests.hs](../test/UnitTests.hs).
-
-
+We provided unit tests for our proof-of-burn smart contract in
+[UnitTests.hs](../test/UnitTests.hs).
 
 # Random testing
 

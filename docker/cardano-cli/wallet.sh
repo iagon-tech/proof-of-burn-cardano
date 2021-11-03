@@ -765,7 +765,7 @@ redeem_funds() {
 		"1852H/1815H/0H/0/0"
 
 	printf "%s" "{\"constructor\":0,\"fields\":[{\"bytes\":\"$5\"}]}" >"${state_dir}/datum_file.txt"
-	printf "%s" "{\"constructor\":0,\"fields\":[]}" >"${state_dir}/redeemer_file.txt"
+	printf "%s" "{\"constructor\":0,\"fields\":[{\"constructor\":0,\"fields\":[]}]}" >"${state_dir}/redeemer_file.txt"
 
 	edo redeem_script_transaction \
 		"${state_dir}/tx.raw" \

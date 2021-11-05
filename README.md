@@ -23,7 +23,7 @@ Then copy paste `ProofOfBurn.hs` and compile and evaluate.
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
 source ~/.ghcup/env
-cabal run plutus-burner
+cabal run plutus-burner -- generate-plutus -d result.plutus
 ```
 
 2. Starting node and wallet:
@@ -163,7 +163,7 @@ scripts/cardano-cli.sh 'wallet.sh bootstrap_wallet <mnemonic sentence phrase> <p
 
 ```sh
 # keep the output address
-cabal run generate-burn-address -- "mysecret"
+cabal run plutus-burner -- generate-addr "mysecret"
 # insert address
 scripts/cardano-cli.sh 'wallet.sh send_funds out/ <wallet-id> <fake-address> <amount>'
 ```

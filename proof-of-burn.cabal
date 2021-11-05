@@ -23,6 +23,7 @@ library
   build-depends:       aeson
                      , base ^>=4.14.1.0
                      , bytestring
+                     , cardano-api
                      , containers
                      , cardano-api
                      , cardano-prelude
@@ -46,24 +47,19 @@ executable plutus-burner
   ghc-options:          -threaded -rtsopts "-with-rtsopts=-T"
 
   build-depends:        cardano-api
+                      , cmdargs
                       , base ^>=4.14.1.0
-                      , cardano-ledger-alonzo
-                      , plutus-ledger
-                      , proof-of-burn
-                      , plutus-ledger-api
+                      , aeson
+                      , aeson-pretty
                       , bytestring
-
-executable generate-burn-address
-  main-is:              app/generate-burn-address/Main.hs
-  ghc-options:          -threaded -rtsopts "-with-rtsopts=-T"
-
-  build-depends:        cardano-api
-                      , base ^>=4.14.1.0
-                      , bytestring
-                      , cardano-ledger-core
-                      , cardano-crypto-class
-                      , cardano-ledger-shelley
                       , cardano-binary
+                      , cardano-crypto-class
+                      , cardano-ledger-alonzo
+                      , cardano-ledger-core
+                      , cardano-ledger-shelley
+                      , plutus-ledger
+                      , plutus-ledger-api
+                      , proof-of-burn
                       , text
                       , unix
 

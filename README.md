@@ -59,6 +59,7 @@ scripts/cardano-cli.sh 'wallet.sh burn_funds out/ <wallet-id> <commitment> <amou
 6. Validate burn
 
 ```sh
+# might need to re-run a few times, until the burn transaction reached the blockchain
 scripts/cardano-cli.sh 'wallet.sh validate_burn <commitment> $(cat out/burn.addr)'
 ```
 
@@ -70,8 +71,62 @@ scripts/cardano-cli.sh 'wallet.sh get_utxo $(cat out/burn.addr)' | jq -r .
 
 # use txhash/txix from previous step
 scripts/cardano-cli.sh \
-	'wallet.sh redeem_funds <wallet-id> <txhash> <txix> <datum>'
+	'wallet.sh redeem_funds out/ <wallet-id> <txhash> <txix> <datum>'
 ```
+
+### Lock-Redeem
+
+The steps above show a proof-of-burn workflow. This script can do a simple lock-redeem as well, which
+also serves as a practical proof that a burned value cannot be redeemed, despite this functionality
+existent in the script.
+
+Here's a brief step-by-step guide to lock and redeem:
+
+1. Follow the first 4 steps from the burn-workflow above
+
+2. Generate datum, so that we can redeem ourselves
+
+```sh
+# we need this value for the next step
+scripts/cardano-cli.sh 'wallet.sh get_pubkey_hash out/root.prv "1852H/1815H/0H/0/0"'
+# we need this value for the next step
+scripts/cardano-cli.sh 'wallet.sh sha3_256 <output-from-prev-step>'
+```
+
+3. Lock
+
+```sh
+# need output from step 2, which is our datum
+scripts/cardano-cli.sh 'wallet.sh lock_funds out/ <wallet-id> <datum> <amount-to-lock>'
+```
+
+4. Check that the script transaction made it to the chain
+
+```sh
+# look for your locked value in the output (might need to re-run a few times)
+# and find txhash/txix to redeem
+scripts/cardano-cli.sh 'wallet.sh get_utxo $(cat out/burn.addr)' | jq -r .
+```
+
+5. Check wallet balance before redeeming
+
+```sh
+scripts/cardano-cli.sh 'wallet.sh available_funds <wallet-id>'
+```
+
+6. Redeem
+
+```sh
+scripts/cardano-cli.sh 'wallet.sh redeem_funds out/ <wallet-id> <txhash> <txix> <datum>'
+```
+
+5. Check wallet balance after redeeming
+
+```sh
+# might need to re-run a few times until transaction made it to the chain
+scripts/cardano-cli.sh 'wallet.sh available_funds <wallet-id>'
+```
+
 
 ## UTxO version with fake address
 

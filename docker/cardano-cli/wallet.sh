@@ -626,7 +626,7 @@ validate_burn() {
 	tmp_dir=$(mktempdir)
 	{ [ -z "${tmp_dir}" ] || ! [ -d "${tmp_dir}" ]; } && die "Failed to create temporary directory"
 
-	edo flip_last_bit "$(sha3_256 "$1")" >"${tmp_dir}"/hashable.txt
+	echo "{\"constructor\":0,\"fields\":[{\"bytes\":\"$(flip_last_bit "$(sha3_256 "$1")")\"}]}" >"${tmp_dir}"/hashable.txt
 	datum=$(datum_hash "${tmp_dir}"/hashable.txt)
 
 	[ -n "${datum}" ] || die "Could not get datum hash"

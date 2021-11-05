@@ -32,6 +32,7 @@ cabal run plutus-burner
 mkdir out/
 export NETWORK=testnet
 export BLOCKFROST_API_TOKEN=<token>
+docker-compose build --build-arg CARDANO_NODE_GIT_REF=9dd31b3f8f17fba30882e98bb02810a7a504ba38
 docker-compose up -d
 docker-compose run cardano-wallet \
 	sh -c 'chmod 777 /ipc/node.socket'

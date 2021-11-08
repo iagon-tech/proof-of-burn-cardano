@@ -32,6 +32,7 @@ library
                      , plutus-core
                      , plutus-contract
                      , plutus-chain-index
+                     , plutus-chain-index-core
                      , plutus-ledger
                      , plutus-tx-plugin
                      , plutus-tx

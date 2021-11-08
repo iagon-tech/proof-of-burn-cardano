@@ -20,6 +20,7 @@ common common-extensions
 library
   hs-source-dirs:      src
   exposed-modules:     ProofOfBurn
+                       Contracts
   build-depends:       aeson
                      , base ^>=4.14.1.0
                      , bytestring
@@ -27,7 +28,10 @@ library
                      , containers
                      , cardano-api
                      , cardano-prelude
+                     , data-default
+                     , freer-simple
                      , lens
+                     , openapi3
                      , playground-common
                      , plutus-core
                      , plutus-contract
@@ -36,6 +40,10 @@ library
                      , plutus-ledger
                      , plutus-tx-plugin
                      , plutus-tx
+                     , prettyprinter
+                     , purescript-bridge
+                     , plutus-pab
+                     , row-types
                      , serialise
                      , text
                      , plutus-ledger-api
@@ -63,6 +71,14 @@ executable plutus-burner
                       , proof-of-burn
                       , text
                       , unix
+
+executable plutus-burner-pab
+  main-is:              app/plutus-burner-pab/Main.hs
+  ghc-options:          -threaded -rtsopts "-with-rtsopts=-T"
+
+  build-depends:        base ^>=4.14.1.0
+                      , plutus-pab
+                      , proof-of-burn
 
 test-suite plutus-burner-tests
   import: common-extensions

@@ -1,3 +1,12 @@
-dist
-new-dist
-dist-newstyle
+dist/
+new-dist/
+dist-newstyle/
+.stack-work/
+out/
+cabal.project.local
+result.plutus
+testnet/plutus-pab.db
+testnet/db/
+testnet/chain-index.*
+testnet/wallet-db/
+*.sock

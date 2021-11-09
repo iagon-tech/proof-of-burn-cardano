@@ -19,14 +19,14 @@ have been proven correct according to specification, only to for the
 specification to reveal its imperfections afterward.  Finally, well-written
 random tests are a reasonable basis for proof of correctness.
 
-The Plutus platform has a [built-in support for automatic
+The Plutus platform has [built-in support for automatic
 testing](https://playground.plutus.iohkdev.io/doc/haddock/plutus-pab/html/Plutus-PAB-Arbitrary.html),
 based on a popular property testing framework
 [QuickCheck](https://hackage.haskell.org/package/QuickCheck).
 
-In this article, we show how to make an automatic test for the Plutus smart
-contract using our [smart contract for "proof of
-burn"](https://blog.iagon.com/iagons-solution-to-the-cardano-proof-of-burn-challenge/)
+This article shows how to make an automatic test for the Plutus smart contract
+using our [smart contract for “proof of
+burn”](https://blog.iagon.com/iagons-solution-to-the-cardano-proof-of-burn-challenge/)
 as a reference example.
 
 The *burning* of cryptocurrencies and crypto tokens is sending them to a black
@@ -129,9 +129,8 @@ data Action POBModel
 
 Proof-of-burn smart contract have four endpoints, so we introduce four actions,
 one action for each endpoint. We specify arguments for each endpoint in the
-corresponding action. For example, for the `lock` endpoint, we specify the
-wallet to withdraw, the wallet to which funds will be sent after redeem and
-value.
+corresponding action. For example, we specify the wallet to withdraw for the
+`lock` endpoint, the wallet to which funds will be sent after redeem and value.
 
 Now Plutus platform can generate random sequence (with specified properties)
 like `[Lock w1 w2 10, Lock w3 w1 20, Redeem w2, Burn w3 "h@ck_me" 50]`.  It is
@@ -150,11 +149,11 @@ arbitraryAction _modelState = oneof $
 Note that the current model state is passed to this function to generate actions
 depending on this current state. This can be used in more complex test
 scenarios. For example, if it is necessary for some smart contract to do
-initialization first, we can check passed `modelState` and generate
+initialization first, we can check the passed `modelState` and generate
 initialization action. Then, when initialization occurs, we can generate all
 other actions.
 
-Each generated sequence runs in two processes: first is *simulation*, second is
+Each generated sequence runs in two processes: first is a *simulation*, second is
 running smart contract (under emulator in `EmulatorTrace` monad). For example,
 simulated run of `Lock` action is:
 
@@ -226,15 +225,15 @@ We develop some criteria presented by the respective property test listed below:
 ``` {.haskell}
 tests :: TestTree
 tests = testProperties "prop tests"
-    [ ("lock and then redeem",                  prop_LockAndRedeem)
-    , ("burn and then validate",                prop_BurnAndValidate)
-    , ("random actions is consistent",          prop_RandomActionsIsConsistent)
-    , ("burn validating in emulator is works",  prop_BurnValidatingInEmulatorIsWorks)
-    , ("observable state don't break emulator", prop_GetObservableStateDon'tBreakEmulator)
-    ]
+  [ ("lock and then redeem",                  prop_LockAndRedeem)
+  , ("burn and then validate",                prop_BurnAndValidate)
+  , ("random actions is consistent",          prop_RandomActionsIsConsistent)
+  , ("burn validating in emulator is works",  prop_BurnValidatingInEmulatorIsWorks)
+  , ("observable state don't break emulator", prop_GetObservableStateDon'tBreakEmulator)
+  ]
 ```
 
-* `prop_LockAndRedeem` -- here we check that `redeem` gets all the means locked
+* `prop_LockAndRedeem` -- here, we check that `redeem` gets all the means locked
   with `lock` and that `burn` does not interfere with this. To do this, we first
   call `lock`, then some arbitrary actions, then `redeem`, and then check that
   redeemed expected value.
@@ -249,7 +248,7 @@ actions, where some failures occur. When we develop our proof-of-burn, we have
 faced such issues and save this output to tests. So we have two of them:
 
 * `prop_BurnValidatingInEmulatorIsWorks` -- checks that `ValidateBurn` correctly
-  work in the testing model.
+  works in the testing model.
 * `prop_GetObservableStateDon'tBreakEmulator` -- we seem to have encountered a
   bug in the Plutus emulator, and here we check that our test model bypasses it.
 

@@ -59,42 +59,43 @@ developers to check final balances on these wallets.
 
 Let us look at a code example:
 
-``` {.haskell .numberLines}
+``` {.haskell}
 testLockAndRedeem :: TestTree
-testLockAndRedeem = checkPredicate "lock and redeem"
-  (     walletFundsChange w1 (Ada.adaValueOf (-50))
-   .&&. walletFundsChange w2 (Ada.adaValueOf   50)
-   .&&. walletFundsChange w3 (Ada.adaValueOf    0)
-  )
-  do
-    hndl1 <- activateContractWallet w1 contract
-    let toAddr = pubKeyHash $ walletPubKey w2
-    callEndpoint @"lock" hnld1 (toAddr, adaValueOf 50)
-    Emulator.waitNSlots 1
-    hndl2 <- activateContractWallet w2 contract
-    callEndpoint @"redeem" hndl2 ()
+testLockAndRedeem =
+  checkPredicate "lock and redeem" testPredicate testScenario
+  where
+    testScenario = do
+      hndl1 <- activateContractWallet w1 contract
+      let toAddr = pubKeyHash $ walletPubKey w2
+      callEndpoint @"lock" hnld1 (toAddr, adaValueOf 50)
+      Emulator.waitNSlots 1
+      hndl2 <- activateContractWallet w2 contract
+      callEndpoint @"redeem" hndl2 ()
+    testPredicate =
+           walletFundsChange w1 (Ada.adaValueOf (-50))
+      .&&. walletFundsChange w2 (Ada.adaValueOf   50)
+      .&&. walletFundsChange w3 (Ada.adaValueOf    0)
 ```
 
 In this test scenario, we lock 50 ADA from simulated wallet `w1` in favor of
 another wallet `w2` and check that other (for example, `w3`) wallets are
 unchanged.
 
-Here we have the state validation after the test in lines 3-5, and we have the
-test scenario itself in lines 8-13. All that is executed by function
-`checkPredicate`. It takes the name of the test that is displayed to the user,
-predicate to post-checking, and test scenario itself).
+Here we have the state validation checks after the test in function
+`testPredicate`, and we have the test scenario itself in `testScenario`. All
+that is executed by the function `checkPredicate`.
 
-In the test scenario, we first make an instance `hndl1` of our proof-of-burn
-smart contract bounded to simulated wallet `w1` (line 8), then call the `lock`
-endpoint in line 10. We call this endpoint with two arguments: the address where
-to send `toAddr` value `adaValueOf 50`. Then it is needed to execute changes in
-the test blockchain environment, so we wait for one tick in line 11. Then we
-make another smart contract instance bound to simulated wallet `w2` (line 12)
-and call endpoint `redeem`.  The test scenario is complete.
+In the `testScenario`, we first make an instance `hndl1` of our proof-of-burn
+smart contract bounded to simulated wallet `w1`, then call the `lock` endpoint.
+We call this endpoint with two arguments: the address where to send `toAddr`
+value `adaValueOf 50`. Then it is needed to execute changes in the test
+blockchain environment, so we wait for one tick. Then we make another smart
+contract instance bound to simulated wallet `w2` and call endpoint `redeem`.
+The test scenario is complete.
 
-Then the predicate in lines 3-5 is checked. Here we make sure that the balance
-of simulated wallet `w1` decreased by 50 ADA, the balance of `w2` increased by
-50 ADA and the balance of `w3` remains the same.
+Then the `testPredicate` is checked. Here we make sure that the balance of
+simulated wallet `w1` decreased by 50 ADA, the balance of `w2` increased by 50
+ADA, and the balance of `w3` remains the same.
 
 We provided unit tests for our proof-of-burn smart contract in
 [UnitTests.hs](../test/UnitTests.hs).

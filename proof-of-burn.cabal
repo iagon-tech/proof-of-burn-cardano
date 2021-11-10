@@ -18,27 +18,29 @@ common common-extensions
 
 -- NoImplicitPrelude
 library
-  hs-source-dirs:   src
-  exposed-modules:  ProofOfBurn
-  build-depends:
-    , aeson
-    , base                ^>=4.14.1.0
-    , bytestring
-    , cardano-api
-    , cardano-prelude
-    , containers
-    , lens
-    , mono-traversable
-    , playground-common
-    , plutus-chain-index
-    , plutus-contract
-    , plutus-core
-    , plutus-ledger
-    , plutus-ledger-api
-    , plutus-tx
-    , plutus-tx-plugin
-    , serialise
-    , text
+  hs-source-dirs:      src
+  exposed-modules:     ProofOfBurn
+  build-depends:       aeson
+                     , base ^>=4.14.1.0
+                     , bytestring
+                     , cardano-api
+                     , containers
+                     , cardano-api
+                     , cardano-prelude
+                     , lens
+                     , playground-common
+                     , plutus-core
+                     , plutus-contract
+                     , plutus-chain-index
+                     , plutus-ledger
+                     , plutus-tx-plugin
+                     , plutus-tx
+                     , serialise
+                     , text
+                     , plutus-ledger-api
+                     , mono-traversable
+  default-language:    Haskell2010
+  ghc-options:         -Wall -fobject-code -fno-ignore-interface-pragmas -fno-omit-interface-pragmas -fno-strictness -fno-spec-constr -fno-specialise
 
   default-language: Haskell2010
   ghc-options:
@@ -46,31 +48,22 @@ library
     -fno-omit-interface-pragmas -fno-strictness -fno-spec-constr
     -fno-specialise
 
-executable plutus-burner
-  main-is:       app/plutus-burner/Main.hs
-  ghc-options:   -threaded -rtsopts -with-rtsopts=-T
-  build-depends:
-    , base                   ^>=4.14.1.0
-    , bytestring
-    , cardano-api
-    , cardano-ledger-alonzo
-    , plutus-ledger
-    , plutus-ledger-api
-    , proof-of-burn
-
-executable generate-burn-address
-  main-is:       app/generate-burn-address/Main.hs
-  ghc-options:   -threaded -rtsopts -with-rtsopts=-T
-  build-depends:
-    , base                  ^>=4.14.1.0
-    , bytestring
-    , cardano-api
-    , cardano-binary
-    , cardano-crypto-class
-    , cardano-ledger-core
-    , shelley-spec-ledger
-    , text
-    , unix
+  build-depends:        cardano-api
+                      , cmdargs
+                      , base ^>=4.14.1.0
+                      , aeson
+                      , aeson-pretty
+                      , bytestring
+                      , cardano-binary
+                      , cardano-crypto-class
+                      , cardano-ledger-alonzo
+                      , cardano-ledger-core
+                      , cardano-ledger-shelley
+                      , plutus-ledger
+                      , plutus-ledger-api
+                      , proof-of-burn
+                      , text
+                      , unix
 
 test-suite plutus-burner-tests
   import:           common-extensions

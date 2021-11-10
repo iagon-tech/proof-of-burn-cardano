@@ -48,7 +48,7 @@ import Plutus.Contract
     ( (>>),
       logInfo,
       endpoint,
-      ownPubKey,
+      ownPubKeyHash,
       submitTxConstraints,
       submitTxConstraintsSpending,
       utxosAt,
@@ -83,8 +83,8 @@ import PlutusTx.Prelude
       BuiltinByteString,
       Eq((==)),
       Functor(fmap),
-      Semigroup((<>)), BuiltinString )
-import           PlutusTx.Builtins.Internal (BuiltinByteString(..))
+      Semigroup((<>)), Monoid(mempty), foldr, BuiltinString )
+import           PlutusTx.Builtins.Internal (BuiltinByteString(..), decodeUtf8)
 import           Ledger                    (Address(..), Datum(..), scriptAddress, datumHash)
 import           Ledger.AddressMap         (UtxoMap)
 import qualified Ledger.Constraints        as Constraints
@@ -119,17 +119,35 @@ import Plutus.ChainIndex.Tx
     ( ChainIndexTx(ChainIndexTx, _citxData) )
 import           Cardano.Prelude ( Set, MonadError (throwError) )
 import qualified Data.Set as Set
+import Text.ParserCombinators.ReadPrec
+import GHC.Read
+import qualified Text.Read.Lex as L
+import           Plutus.V1.Ledger.Address
+import           Plutus.V1.Ledger.Crypto
 
 
 -- | Utxo datum holds either:
 --     * the hash of the address that can redeem the value, if it was locked;
 --     * the hash with the last bit flipped, if it was burned.
 newtype MyDatum = MyDatum { fromMyDatum :: BuiltinByteString }
+  deriving (Prelude.Show)
 PlutusTx.makeLift ''MyDatum
 PlutusTx.unstableMakeIsData ''MyDatum
 
+instance Prelude.Read MyDatum where
+  readPrec =
+    parens
+    (do expectP (L.Ident "MyDatum")
+        x <- step readPrec
+        return $ MyDatum (BuiltinByteString x)
+    )
+  readListPrec = readListPrecDefault
+  readList     = readListDefault
+
+
 -- | Redeemer holds no data, since the address is taken from the context.
 newtype MyRedeemer = MyRedeemer { _nothing :: () }
+  deriving (Prelude.Read, Prelude.Show)
 PlutusTx.makeLift ''MyRedeemer
 PlutusTx.unstableMakeIsData ''MyRedeemer
 
@@ -176,7 +194,18 @@ tellAction action = tell (ContractStateAction action None)
 -- | Spending validator checks that hash of the redeeming address is the same as the Utxo datum.
 validateSpend :: ValidatorType Burner
 validateSpend (MyDatum addrHash) _myRedeemerValue ScriptContext { scriptContextTxInfo = txinfo } =
-   traceIfFalse "owner has not signed" (addrHash `elem` fmap (sha3_256 . getPubKeyHash) (txInfoSignatories txinfo))
+   traceIfFalse traceMsg (addrHash `elem` allPubkeyHashes)
+ where
+  requiredSigs :: [PubKeyHash]
+  requiredSigs = txInfoSignatories txinfo
+  allPubkeyHashes :: [BuiltinByteString]
+  allPubkeyHashes = fmap (sha3_256 . getPubKeyHash) requiredSigs
+  sigsS :: BuiltinString
+  sigsS = "[" <> foldr (\a b -> decodeUtf8 a <> ", " <> b) mempty allPubkeyHashes <> "]"
+  traceMsg :: BuiltinString
+  traceMsg
+    | allPubkeyHashes == [] = "No required signatures attached. Owner has not signed."
+    | otherwise             = "Owner has not signed, expected " <> decodeUtf8 addrHash <> ", but got: " <> sigsS
 
 -- | The address of the contract (the hash of its validator script).
 contractAddress :: Address
@@ -258,7 +287,7 @@ flipCommitment (BuiltinByteString bs) = BuiltinByteString $ do
 --   Can redeem the value, if it was published, not burned.
 redeem :: Promise ContractState Schema ContractError ()
 redeem = endpoint @"redeem" $ \() -> do
-    pubk <- ownPubKey
+    pubk <- ownPubKeyHash
     unspentOutputs' <- utxosTxOutTxAt contractAddress
     let relevantOutputs = filterUTxOs unspentOutputs' (filterByPubKey pubk)
         funds = totalValue relevantOutputs
@@ -267,15 +296,15 @@ redeem = endpoint @"redeem" $ \() -> do
     let redeemer = MyRedeemer ()
         tx       = collectFromScript txInput redeemer
     void $ submitTxConstraintsSpending burnerTypedValidator txInput tx
-    tellAction (Redeemed funds (getPubKeyHash $ pubKeyHash pubk))
+    tellAction (Redeemed funds (getPubKeyHash pubk))
  where
    filterUTxOs ::  Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx)
                 -> ((ChainIndexTxOut, ChainIndexTx) -> Bool)
                 -> Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx)
    filterUTxOs txMap p = flip Map.filter txMap p
 
-   filterByPubKey :: PubKey -> (ChainIndexTxOut, ChainIndexTx) -> Bool
-   filterByPubKey pubk txtpl = fmap fromMyDatum (getMyDatum txtpl) == Just (sha3_256 (getPubKeyHash (pubKeyHash pubk)))
+   filterByPubKey :: PubKeyHash -> (ChainIndexTxOut, ChainIndexTx) -> Bool
+   filterByPubKey pubk txtpl = fmap fromMyDatum (getMyDatum txtpl) == Just (sha3_256 (getPubKeyHash pubk))
 
 validateBurn' :: AsContractError e => BuiltinByteString -> Contract ContractState Schema e ()
 validateBurn' aCommitment = do

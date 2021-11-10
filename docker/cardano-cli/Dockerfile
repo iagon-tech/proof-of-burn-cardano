@@ -29,7 +29,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
         xxd && \
     rm -rf /var/lib/apt/lists/*
 
-ARG GHCUP_VERSION=0.1.17.1
+ARG GHCUP_VERSION=0.1.17.3
 ARG GPG_KEY=7784930957807690A66EBDBE3786C5262ECB4A3F
 
 # install ghcup
@@ -44,7 +44,7 @@ RUN gpg --batch --keyserver keys.openpgp.org --recv-keys $GPG_KEY && \
     rm -rf SHA256SUMS SHA256SUMS.sig
 
 ARG GHC=8.10.7
-ARG CABAL_INSTALL=3.6.0.0
+ARG CABAL_INSTALL=3.6.2.0
 
 # install haskell toolchain
 RUN export GHCUP_CURL_OPTS="--silent" NO_COLOR=1 && \
@@ -67,7 +67,7 @@ RUN if [ -n "${CARDANO_NODE_GIT_REF}" ] ; then \
         cabal install -f-external-libsodium-vrf --installdir=/usr/bin --overwrite-policy=always --install-method=copy cardano-cli \
     ; fi
 
-ARG RELEASE=2021-09-09
+ARG RELEASE=2021-09-29
 
 RUN curl -L -o wallet.tar.gz \
         https://github.com/input-output-hk/cardano-wallet/releases/download/v${RELEASE}/cardano-wallet-v${RELEASE}-linux64.tar.gz && \

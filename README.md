@@ -23,7 +23,7 @@ Then copy paste `ProofOfBurn.hs` and compile and evaluate.
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
 source ~/.ghcup/env
-cabal run plutus-burner
+cabal run plutus-burner -- generate-plutus -d result.plutus
 ```
 
 2. Starting node and wallet:
@@ -32,6 +32,7 @@ cabal run plutus-burner
 mkdir out/
 export NETWORK=testnet
 export BLOCKFROST_API_TOKEN=<token>
+docker-compose build --build-arg CARDANO_NODE_GIT_REF=9dd31b3f8f17fba30882e98bb02810a7a504ba38
 docker-compose up -d
 docker-compose run cardano-wallet \
 	sh -c 'chmod 777 /ipc/node.socket'
@@ -58,6 +59,7 @@ scripts/cardano-cli.sh 'wallet.sh burn_funds out/ <wallet-id> <commitment> <amou
 6. Validate burn
 
 ```sh
+# might need to re-run a few times, until the burn transaction reached the blockchain
 scripts/cardano-cli.sh 'wallet.sh validate_burn <commitment> $(cat out/burn.addr)'
 ```
 
@@ -69,8 +71,62 @@ scripts/cardano-cli.sh 'wallet.sh get_utxo $(cat out/burn.addr)' | jq -r .
 
 # use txhash/txix from previous step
 scripts/cardano-cli.sh \
-	'wallet.sh redeem_funds <wallet-id> <txhash> <txix> <datum>'
+	'wallet.sh redeem_funds out/ <wallet-id> <txhash> <txix> <datum>'
 ```
+
+### Lock-Redeem
+
+The steps above show a proof-of-burn workflow. This script can do a simple lock-redeem as well, which
+also serves as a practical proof that a burned value cannot be redeemed, despite this functionality
+existent in the script.
+
+Here's a brief step-by-step guide to lock and redeem:
+
+1. Follow the first 4 steps from the burn-workflow above
+
+2. Generate datum, so that we can redeem ourselves
+
+```sh
+# we need this value for the next step
+scripts/cardano-cli.sh 'wallet.sh get_pubkey_hash out/root.prv "1852H/1815H/0H/0/0"'
+# we need this value for the next step
+scripts/cardano-cli.sh 'wallet.sh sha3_256 <output-from-prev-step>'
+```
+
+3. Lock
+
+```sh
+# need output from step 2, which is our datum
+scripts/cardano-cli.sh 'wallet.sh lock_funds out/ <wallet-id> <datum> <amount-to-lock>'
+```
+
+4. Check that the script transaction made it to the chain
+
+```sh
+# look for your locked value in the output (might need to re-run a few times)
+# and find txhash/txix to redeem
+scripts/cardano-cli.sh 'wallet.sh get_utxo $(cat out/burn.addr)' | jq -r .
+```
+
+5. Check wallet balance before redeeming
+
+```sh
+scripts/cardano-cli.sh 'wallet.sh available_funds <wallet-id>'
+```
+
+6. Redeem
+
+```sh
+scripts/cardano-cli.sh 'wallet.sh redeem_funds out/ <wallet-id> <txhash> <txix> <datum>'
+```
+
+5. Check wallet balance after redeeming
+
+```sh
+# might need to re-run a few times until transaction made it to the chain
+scripts/cardano-cli.sh 'wallet.sh available_funds <wallet-id>'
+```
+
 
 ## UTxO version with fake address
 
@@ -107,7 +163,7 @@ scripts/cardano-cli.sh 'wallet.sh bootstrap_wallet <mnemonic sentence phrase> <p
 
 ```sh
 # keep the output address
-cabal run generate-burn-address -- "mysecret"
+cabal run plutus-burner -- generate-addr "mysecret"
 # insert address
 scripts/cardano-cli.sh 'wallet.sh send_funds out/ <wallet-id> <fake-address> <amount>'
 ```

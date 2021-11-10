@@ -627,7 +627,7 @@ validate_burn() {
 	tmp_dir=$(mktempdir)
 	{ [ -z "${tmp_dir}" ] || ! [ -d "${tmp_dir}" ]; } && die "Failed to create temporary directory"
 
-	edo flip_last_bit "$(sha3_256 "$1")" >"${tmp_dir}"/hashable.txt
+	echo "{\"constructor\":0,\"fields\":[{\"bytes\":\"$(flip_last_bit "$(sha3_256 "$1")")\"}]}" >"${tmp_dir}"/hashable.txt
 	datum=$(datum_hash "${tmp_dir}"/hashable.txt)
 
 	[ -n "${datum}" ] || die "Could not get datum hash"
@@ -765,7 +765,7 @@ redeem_funds() {
 		"1852H/1815H/0H/0/0"
 
 	printf "%s" "{\"constructor\":0,\"fields\":[{\"bytes\":\"$5\"}]}" >"${state_dir}/datum_file.txt"
-	printf "%s" "{\"constructor\":0,\"fields\":[]}" >"${state_dir}/redeemer_file.txt"
+	printf "%s" "{\"constructor\":0,\"fields\":[{\"constructor\":0,\"fields\":[]}]}" >"${state_dir}/redeemer_file.txt"
 
 	edo redeem_script_transaction \
 		"${state_dir}/tx.raw" \

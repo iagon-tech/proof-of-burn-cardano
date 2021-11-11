@@ -277,6 +277,16 @@ available_funds() {
 	edo wallet "$1" | jq -r '.balance.available.quantity'
 }
 
+# @FUNCTION: get_pubkey_hash
+# @USAGE: <wallet-id>
+# @DESCRIPTION:
+# Get wallet pubkey hash
+# @STDOUT: pubkey hash
+get_pubkey_hash() {
+	[ -z "$1" ] && die "Error: no argument given to get_pubkey_hash"
+	curl -s -X GET "${WALLET_URL}/v2/wallets/$1/keys/utxo_external/0?hash=true" | jq -r . | bech32
+}
+
 ########################
 ## Blockchain queries ##
 ########################
@@ -347,30 +357,6 @@ create_svkeys() {
 	unset skey_out_file vkey_out_file root_prv_in_file tmp_dir
 }
 
-# TODO: use wallet API
-# @FUNCTION: get_pubkey_hash
-# @USAGE: <root-prv-in-file> <derivation-path>
-# @DESCRIPTION:
-# Get wallet p
-# @STDOUT: pubkey hash
-get_pubkey_hash() {
-	[ "$#" -lt 2 ] && die "error: not enough arguments to get_pubkey_hash (expexted at least 2)"
-
-	root_prv_in_file=$1
-
-	tmp_dir=$(mktempdir)
-	{ [ -z "${tmp_dir}" ] || ! [ -d "${tmp_dir}" ]; } && die "Failed to create temporary directory"
-	edo cat "$root_prv_in_file" |
-		cardano-address key child "$2" >"${tmp_dir}/addr.prv"
-
-	edo cat "${tmp_dir}/addr.prv" |
-		cardano-address key public --with-chain-code >"${tmp_dir}/addr.xvk"
-
-	cardano-cli address key-hash --payment-verification-key-file "${tmp_dir}/addr.xvk"
-
-	[ -e "${tmp_dir}" ] && rm -r "${tmp_dir}"
-	unset skey_out_file vkey_out_file root_prv_in_file tmp_dir
-}
 
 # TODO: use wallet API
 # @FUNCTION: script_address

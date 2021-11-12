@@ -8,16 +8,15 @@ bibliography: cardano-testing.bib
 
 # Introduction
 
-Writing a valid smart contract requires both ability and diligence. Developers
-have to take into account all possible uses and scenarios. If requirements
-change, the assumptions and behavior may need revalidation. That is why
-automated random testing on real-world systems is the best way to ensure the
-correctness of smart contracts. The developer may implement tests sooner than a
-complete proof of correctness, and random testing makes fewer assumptions than
-such a proof.  This is especially important in the light of smart contracts that
-have been proven correct according to specification, only to for the
-specification to reveal its imperfections afterward.  Finally, well-written
-random tests are a reasonable basis for proof of correctness.
+Writing a valid smart contract requires both ability and diligence.
+Developers have to take into account all possible uses and scenarios.
+Verifying that the behavior of the smart contract (i.e. "formal verification of smart contract") conforms to all the ways of working specified in the specification requires a great deal of effort.
+In addition, if requirements change, the assumptions and behavior will need to be verified again.
+That is why automated random testing on real-world systems is the best way to ensure the rightness of smart contracts.
+Developers can implement tests faster than complete verification, and random testing makes fewer assumptions than such a verification.
+Such tests can quickly uncover both problems in the smart contracts themselves and gaps in the original specification.
+This is especially important in the light of smart contracts that have been proven correct according to specification, only to for the specification to reveal its imperfections afterward.
+Moreover, well-written random tests are a reasonable basis for the verification of correctness.
 
 The Plutus platform has [built-in support for automatic
 testing](https://playground.plutus.iohkdev.io/doc/haddock/plutus-pab/html/Plutus-PAB-Arbitrary.html),
@@ -86,11 +85,11 @@ Here we have the state validation checks after the test in function
 that is executed by the function `checkPredicate`.
 
 In the `testScenario`, we first make an instance `hndl1` of our proof-of-burn
-smart contract bounded to simulated wallet `w1`, then call the `lock` endpoint.
+smart contract with simulated wallet `w1`, then call the `lock` endpoint.
 We call this endpoint with two arguments: the address where to send `toAddr`
 value `adaValueOf 50`. Then it is needed to execute changes in the test
 blockchain environment, so we wait for one tick. Then we make another smart
-contract instance bound to simulated wallet `w2` and call endpoint `redeem`.
+contract instance with simulated wallet `w2` and call endpoint `redeem`.
 The test scenario is complete.
 
 Then the `testPredicate` is checked. Here we make sure that the balance of

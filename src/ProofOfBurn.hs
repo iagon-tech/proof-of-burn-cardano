@@ -32,7 +32,7 @@
 --  In order to check that value was indeed burned, one needs to run a `burned` script with the same commitment value.
 module ProofOfBurn where
 
-import           Control.Monad             (void, when, forM)
+import           Control.Monad             (void, when, forM, forM_)
 import           Control.Applicative       (liftA3)
 import Control.Lens ( foldOf, folded, Field1(_1), Field4(_4) )
 import           Data.Bits                 (xor)
@@ -47,6 +47,7 @@ import qualified Data.List.NonEmpty        as NonEmpty(toList)
 import Plutus.Contract
     ( (>>),
       logInfo,
+      logError,
       endpoint,
       ownPubKeyHash,
       submitTxConstraints,
@@ -254,8 +255,9 @@ lock = endpoint @"lock" lock'
 
 lock' :: AsContractError e => (PubKeyHash, Value) -> Contract ContractState Schema e ()
 lock' (addr, lockedFunds) = do
+    pubk <- ownPubKeyHash
     let hash = sha3_256 $ getPubKeyHash addr
-    let tx = Constraints.mustPayToTheScript (MyDatum hash) lockedFunds
+    let tx = Constraints.mustPayToTheScript (MyDatum hash) lockedFunds <> Constraints.mustBeSignedBy pubk
     void $ submitTxConstraints burnerTypedValidator tx
     tellAction (LockedValue lockedFunds hash)
 
@@ -288,16 +290,21 @@ flipCommitment (BuiltinByteString bs) = BuiltinByteString $ do
 redeem :: Promise ContractState Schema ContractError ()
 redeem = endpoint @"redeem" $ \() -> do
     pubk <- ownPubKeyHash
+    logInfo @Prelude.String $ Prelude.show pubk
     unspentOutputs' <- utxosTxOutTxAt contractAddress
     let relevantOutputs = filterUTxOs unspentOutputs' (filterByPubKey pubk)
         funds = totalValue relevantOutputs
-        txInput = Map.map Prelude.fst $ relevantOutputs
-    when (Map.null relevantOutputs) $ throwError (OtherError $ T.pack "No UTxO to redeem from")
+        txInputs = Map.map Prelude.fst $ relevantOutputs
+    when (Map.null relevantOutputs) $ do
+      logError @Prelude.String $ "No UTxO to redeem from"
+      throwError (OtherError $ T.pack "No UTxO to redeem from")
     let redeemer = MyRedeemer ()
-        tx       = collectFromScript txInput redeemer
-    void $ submitTxConstraintsSpending burnerTypedValidator txInput tx
+    forM_ (Map.toList txInputs) $ \(k, v) -> do
+        let txInput = Map.singleton k v
+            tx = collectFromScript txInput redeemer
+        void $ submitTxConstraintsSpending burnerTypedValidator txInput tx
     tellAction (Redeemed funds (getPubKeyHash pubk))
- where
+ where      
    filterUTxOs ::  Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx)
                 -> ((ChainIndexTxOut, ChainIndexTx) -> Bool)
                 -> Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx)

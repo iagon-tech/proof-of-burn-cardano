@@ -257,8 +257,8 @@ lock' :: AsContractError e => (PubKeyHash, Value) -> Contract ContractState Sche
 lock' (addr, lockedFunds) = do
     pubk <- ownPubKeyHash
     let hash = sha3_256 $ getPubKeyHash addr
-    let tx = Constraints.mustPayToTheScript (MyDatum hash) lockedFunds <> Constraints.mustBeSignedBy pubk
-    void $ submitTxConstraints burnerTypedValidator tx
+    let txConstraint = Constraints.mustPayToTheScript (MyDatum hash) lockedFunds <> Constraints.mustBeSignedBy pubk
+    tx <- submitTxConstraints burnerTypedValidator txConstraint
     tellAction (LockedValue lockedFunds hash)
 
 -- | The "burn" contract endpoint.
@@ -301,8 +301,8 @@ redeem = endpoint @"redeem" $ \() -> do
     let redeemer = MyRedeemer ()
     forM_ (Map.toList txInputs) $ \(k, v) -> do
         let txInput = Map.singleton k v
-            tx = collectFromScript txInput redeemer
-        void $ submitTxConstraintsSpending burnerTypedValidator txInput tx
+            txConstraint = collectFromScript txInput redeemer <> Constraints.mustBeSignedBy pubk
+        void $ submitTxConstraintsSpending burnerTypedValidator txInput txConstraint
     tellAction (Redeemed funds (getPubKeyHash pubk))
  where      
    filterUTxOs ::  Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx)

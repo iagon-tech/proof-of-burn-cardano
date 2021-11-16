@@ -2,7 +2,7 @@
 
 set -eux
 
-bin=$(cabal list-bin exe:cardano-node)
+bin=$(cd "${CARDANO_NODE_DIR}" && cabal list-bin exe:cardano-node)
 
 exec "${bin}" run \
     --config testnet/testnet-config.json \

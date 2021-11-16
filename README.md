@@ -16,7 +16,11 @@ Build the playground:
 
 Then copy paste `ProofOfBurn.hs` and compile and evaluate.
 
-### Trying on testnet
+### Trying on testnet via cli
+
+This only uses the plutus script, but not any of the endpoints. Submission of contracts,
+checking their values etc. is used via command line tools and utilizing BLOCKFROST blockchain
+indexer.
 
 1. Build plutus script
 
@@ -127,6 +131,126 @@ scripts/cardano-cli.sh 'wallet.sh redeem_funds out/ <wallet-id> <txhash> <txix> 
 scripts/cardano-cli.sh 'wallet.sh available_funds <wallet-id>'
 ```
 
+### Trying on testnet via plutus PAB
+
+Unlike the cli version, this doesn't just run the plutus script, but the real contract endpoints.
+For that we need an entire stack of applications:
+
+1. **node (unix socket)**: communication entrypoint to the blockchain
+2. **wallet (HTTP REST API)**: manages wallet, keys, transaction creation etc.
+3. **chain indexer (HTTP REST API)**: imports relevant blockchain data into an sqlite database for more efficient queries by the PAB backend
+4. **plutus PAB (HTTP REST API)**: contract backend
+
+Via e.g. curl, we can then use the [PAB HTTP API](https://github.com/input-output-hk/plutus-apps/blob/main/plutus-pab/ARCHITECTURE.adoc#the-pab-http-api)
+to start and manage contract instances.
+
+The following steps outline a contract submission:
+
+1. Due to some [issues](https://github.com/input-output-hk/plutus-apps/issues/86), we build the node separately:
+
+```sh
+git clone https://github.com/input-output-hk/cardano-node.git
+cd cardano-node
+git checkout 37d86a65b4ffd7a500bd6fc7246793b1363ff60a
+cabal build cardano-node:exe:cardano-node
+cd ..
+export CARDANO_NODE_DIR="$(pwd)/cardano-node"
+```
+
+2. Build the rest of the stack
+
+```sh
+cabal build proof-of-burn:exe:plutus-burner-pab cardano-wallet:exe:cardano-wallet plutus-chain-index:exe:plutus-chain-index
+```
+
+3. Start the node
+
+```sh
+./start-testnet-node.sh
+```
+
+4. Start the wallet backend
+
+
+5. Create/restore a wallet
+
+```sh
+cat <<'EOF' > testnet/restore-wallet.json
+{ "name": "PAB testing wallet"
+, "mnemonic_sentence": ["word1", "word2", ...]
+, "passphrase": "pab123456789"
+}
+EOF
+
+curl -H "content-type: application/json" -XPOST \
+  -d @testnet/restore-wallet.json \
+  localhost:8090/v2/wallets
+
+# use the returned wallet id
+export WALLET_ID=...
+```
+
+6. Apply for [testnet faucet](https://testnets.cardano.org/en/testnets/cardano/tools/faucet/) to add some funds to your wallet
+
+7. Start chain indexer
+
+```sh
+./start-testnet-chainindex.sh
+```
+
+8. Start PAB backend
+
+```sh
+./start-testnet-pab.sh
+```
+
+9. Wait for all clients to sync, this can take 3 hours up to 1.5 days. To check the progress of the slowest component (chain indexer), run `curl -s localhost:9083/tip | jq '.tipSlot.getSlot'` and compare it with [testnet explorer](https://explorer.cardano-testnet.iohkdev.io/en)
+
+10. Start a contract instance
+
+```sh
+export INSTANCE_ID=$( curl -H "Content-Type: application/json" -v -X POST -d "{\"caID\":[],\"caWallet\":{\"getWalletId\":\"$WALLET_ID\"}}" localhost:9080/api/contract/activate | jq -r '.unContractInstanceId')
+```
+
+11. Lock-redeem a value for yourself
+
+```sh
+# check balance
+curl -H "content-type: application/json" -XGET \
+        localhost:8090/v2/wallets/${WALLET_ID} | jq -r '.balance.available.quantity'
+
+# check contract instance status (hooks should be non-empty)
+curl -H "Content-Type: application/json" -v -X GET \
+        localhost:9080/api/contract/instance/$INSTANCE_ID/status | jq .
+
+# lock value
+LOCK_VALUE=7000067 curl -H "Content-Type: application/json" -v -X POST -d \
+        "[{\"getPubKeyHash\":\"$(scripts/wallet.sh get_pubkey_hash ${WALLET_ID})\"}, {\"getValue\":[[{\"unCurrencySymbol\":\"\"},[[{\"unTokenName\":\"\"},${LOCK_VALUE}]]]]}]" \
+        localhost:9080/api/contract/instance/$INSTANCE_ID/endpoint/lock
+
+# check contract instance status (hooks should be non-empty), there should be a `LockedValue` in `observableState`
+# otherwise try again after a minute, until the transaction is verified on the chain
+curl -H "Content-Type: application/json" -v -X GET \
+        localhost:9080/api/contract/instance/$INSTANCE_ID/status | jq .
+
+# check balance again
+curl -H "content-type: application/json" -XGET \
+        localhost:8090/v2/wallets/${WALLET_ID} | jq -r '.balance.available.quantity'
+
+# redeem
+curl -H "Content-Type: application/json" -v -X POST -d \
+        "[]" \
+        localhost:9080/api/contract/instance/$INSTANCE_ID/endpoint/redeem
+
+# check contract instance status (hooks should be non-empty), there should be a `Redeemed` in `observableState`
+# otherwise try again after a minute, until the transaction is verified on the chain
+curl -H "Content-Type: application/json" -v -X GET \
+        localhost:9080/api/contract/instance/$INSTANCE_ID/status | jq .
+
+# check final balance
+curl -H "content-type: application/json" -XGET \
+        localhost:8090/v2/wallets/${WALLET_ID} | jq -r '.balance.available.quantity'
+```
 
 ## UTxO version with fake address
 

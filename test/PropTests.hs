@@ -7,11 +7,6 @@
 {-# OPTIONS_GHC -fno-warn-orphans  #-}
 module PropTests where
 
--- TODO:
--- 1. Make `redeem` action work before `lock` -- and catch exception.
--- 3. Make tests with negative (?) values
--- 4. Lensify operations with states
-
 import           Control.Lens                       hiding (elements)
 import           Control.Applicative
 import           Control.Monad                      (void, when)
@@ -121,7 +116,6 @@ instance ContractModel POBModel where
 
     precondition _ms (Lock _cid _wFrom _wTo _v) = True
     precondition ms (Redeem _cid       wTo)   =
-        -- TODO remove this check: script will work with empty redeem (but it is need to catch error)
         isJust (ms ^. contractState . pobLocks . at wTo)
     precondition _ms (Burn _cid _wFrom _wTo _v) = True
     precondition _ms (ValidateBurn _cid _wFrom _wTo) = True

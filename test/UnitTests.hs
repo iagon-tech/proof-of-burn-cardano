@@ -268,7 +268,6 @@ testBurnAndValidateBurn3 = check "burn and validateBurn 3"
         void $ Emulator.waitNSlots 1
         --
         pob2 <- activateContractWallet w1 endpoints
-        -- TODO check answer
         callEndpoint @"validateBurn" pob2 "bc"
         void $ Emulator.waitNSlots 1
 
@@ -345,7 +344,6 @@ testBurnBurnedTraceAndRedeem = check "burn, validateBurn and redeem"
         --
         pob2 <- activateContractWallet w2 endpoints
         void $ Emulator.waitNSlots 1
-        -- TODO check answer
         callEndpoint @"validateBurn" pob2 burnedAddr
         void $ Emulator.waitNSlots 1
         --

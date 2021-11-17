@@ -54,7 +54,7 @@ instance ContractModel POBModel where
     data Action POBModel
         = Lock         ContractInstanceId Wallet Wallet Ada
         | Redeem       ContractInstanceId        Wallet
-        | Burn         ContractInstanceId Wallet Wallet Ada -- TODO BYTESTRING!
+        | Burn         ContractInstanceId Wallet Wallet Ada
         | ValidateBurn ContractInstanceId Wallet Wallet
         deriving (Show, Eq)
 
@@ -201,12 +201,6 @@ prop_LockAndRedeem = withMaxSuccess 10 $ forAllDL myTest mkPropForActions
         anyBurnValidateActions_
         (_alreadyBurned :: Ada) <- (\ms -> fromMaybe 0 $ (ms ^. contractState . pobBurns . at w2)) <$> getModelState
         action $ Redeem (ContractInstanceId 2) w2
-        {-
-        -- TODO
-        assertModel "xxx" $ \modelState ->
-            let (Just bc) = fromValue <$> (modelState ^. balanceChanges . at w2)
-            in bc == Ada.lovelaceOf 20000 - alreadyBurned
-            -}
     anyBurnValidateActions_ :: DL POBModel ()
     anyBurnValidateActions_ = stopping <|> (anySpecifiedAction (liftA2 (||) isBurn isValidateBurn) >> anyBurnValidateActions_)
     anySpecifiedAction :: (Action POBModel -> Bool) -> DL POBModel ()

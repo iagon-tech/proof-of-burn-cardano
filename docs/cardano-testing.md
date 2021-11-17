@@ -41,149 +41,33 @@ deflationary pressure since it decreases the total amount of the token in
 circulation.
 
 Plutus platform supports both standard unit tests with a fixed scenario and
-random tests, which are called "property tests" because they aim at testing
-properties (also called "dynamic logic tests") or laws applying to the program,
-not just exact outputs.  Such tests combine user-specified and randomly
-generated scenarios.  This allows covering many more scenarios as compared with
+arbitrary, QuickCheck-based [@quickcheck], tests. The latter allows to implement
+*semi-random* test scenarios, which combine user-specified and randomly
+generated scenarios. This allows covering many more scenarios as compared with
 fixed tests and detecting bugs earlier.
 
-# Unit testing
+Writing unit tests is good covered in many tutorials, such us "Plutus pioneer program" [@pppweek08].
+In this article we show how to write dynamic logic tests.
 
-At first, the Plutus platform supports smart contract unit testing using the
-`EmulatorTrace` monad. This monad allows calling smart contracts in the test
-environment. This monad also simulates wallets and traces balance changes. For
-example, if a smart contract sends money from one wallet to another,
-`EmulatorTrace` simulates both wallets, catches money movement, and allows
-developers to check final balances on these wallets.
+# Dynamic logic testing
 
-Let us look at a code example:
-
-``` {.haskell}
-testLockAndRedeem :: TestTree
-testLockAndRedeem =
-  checkPredicate "lock and redeem" testPredicate testScenario
-  where
-    testScenario = do
-      hndl1 <- activateContractWallet w1 contract
-      let toAddr = pubKeyHash $ walletPubKey w2
-      callEndpoint @"lock" hnld1 (toAddr, adaValueOf 50)
-      Emulator.waitNSlots 1
-      hndl2 <- activateContractWallet w2 contract
-      callEndpoint @"redeem" hndl2 ()
-    testPredicate =
-           walletFundsChange w1 (Ada.adaValueOf (-50))
-      .&&. walletFundsChange w2 (Ada.adaValueOf   50)
-      .&&. walletFundsChange w3 (Ada.adaValueOf    0)
-```
-
-In this test scenario, we lock 50 ADA from simulated wallet `w1` in favor of
-another wallet `w2` and check that other (for example, `w3`) wallets are
-unchanged.
-
-Here we have the state validation checks after the test in function
-`testPredicate`, and we have the test scenario itself in `testScenario`. All
-that is executed by the function `checkPredicate`.
-
-In the `testScenario`, we first make an instance `hndl1` of our proof-of-burn
-smart contract with simulated wallet `w1`, then call the `lock` endpoint.
-We call this endpoint with two arguments: the address where to send `toAddr`
-value `adaValueOf 50`. Then it is needed to execute changes in the test
-blockchain environment, so we wait for one tick. Then we make another smart
-contract instance with simulated wallet `w2` and call endpoint `redeem`.
-The test scenario is complete.
-
-Then the `testPredicate` is checked. Here we make sure that the balance of
-simulated wallet `w1` decreased by 50 ADA, the balance of `w2` increased by 50
-ADA, and the balance of `w3` remains the same.
-
-We provided unit tests for our proof-of-burn smart contract in
-[UnitTests.hs](../test/UnitTests.hs).
-
-# Property testing
-
-Unit-test scenarios are hardwired (never change their behavior). However,  it is
+Unit-test scenarios are hardwired (never change their behavior). However, it is
 sometimes required to check smart contract properties on a wide range of
-behaviors. The Plutus platform has *property-based testing* (or *dynamic logic
-testing*). This feature allows testing multiple complex tests scenarios by
-randomly generating them.
+behaviors. The Plutus platform has *dynamic logic testing*. This feature allows
+testing multiple complex tests scenarios by randomly generating them.
 
-For this purpose, QuickCheck[@quickcheck] supports random generation of
+For this purpose, QuickCheck [@quickcheck] supports random generation of
 arbitrary input to a function. The developer can use the random generator to
 create an arbitrary test scenario and then check that this scenario runs as
 expected.
 
-First, developers have to specify basic actions for interaction with the smart
-contract:
+The testing is model based, so developer have to define instance of
+`ContractModel`. Example implementation of such modal considered well
+in "Plutus pioneer program" [@pppweek08].
 
-``` {.haskell}
-data Action POBModel
-  = Lock         Wallet Wallet Ada
-    -- ^ lock some value from one wallet to another
-  | Redeem       Wallet
-    -- ^ redeem all locked values for the specified wallet
-  | Burn         Wallet ByteString Ada
-    -- ^ burn some value from the wallet using commitment
-  | ValidateBurn Wallet ByteString
-    -- ^ check that wallet make burn with commitment
-```
+-- TODO --
 
-Proof-of-burn smart contract have four endpoints, so we introduce four actions,
-one action for each endpoint. We specify arguments for each endpoint in the
-corresponding action. For example, we specify the wallet to withdraw for the
-`lock` endpoint, the wallet to which funds will be sent after redeem and value.
-
-Now Plutus platform can generate random sequence (with specified properties)
-like `[Lock w1 w2 10, Lock w3 w1 20, Redeem w2, Burn w3 "h@ck_me" 50]`.  It is
-specified in `arbitraryAction` function in `ContractModel` instance using common
-`QuickTest` functions:
-
-``` {.haskell}
-arbitraryAction _modelState = oneof $
-  [ Lock         <$> genWallet <*> genWallet <*> genAda
-  , Redeem       <$> genWallet
-  , Burn         <$> genWallet <*> genByteString <*> genAda
-  , ValidateBurn <$> genWallet <*> genByteString
-  ]
-```
-
-Note that the current model state is passed to this function to generate actions
-depending on this current state. This can be used in more complex test
-scenarios. For example, if it is necessary for some smart contract to do
-initialization first, we can check the passed `modelState` and generate
-initialization action. Then, when initialization occurs, we can generate all
-other actions.
-
-Each generated sequence runs in two processes: first is a *simulation*, second is
-running smart contract (under emulator in `EmulatorTrace` monad). For example,
-simulated run of `Lock` action is:
-
-``` {.haskell}
-nextState (Lock wFrom wTo v) = do
-  withdraw wFrom (Ada.lovelaceValueOf v)
-  (pobLocks . at wTo) $~ (Just . maybe v (+v))
-  wait 1
-```
-
-Here we mark that value `v` withdrawn from simulated wallet `wFrom` and mark
-that is locked in favor of the wallet `wTo`.
-
-Simultaneously, the tester also runs the smart contract for this `Lock` action:
-
-``` {.haskell}
-perform h _modelState = \case
-  (Lock wFrom wTo val) -> do
-    let toAddr = pubKeyHash $ walletPubKey wTo
-    callEndpoint @"lock" (h $ POBKey wFrom) (toAddr, toValue val)
-    waitNSlots 1
-```
-
-After each run, the platform check that the simulation results match those on
-the actual run. Notably, it checks that simulated and real balances match. Our
-example checks that simulated balance after `withdraw` matches with balance
-after `callEndpoint @"lock"` run in `EmulatorTrace` monad.
-
-All previously described Plutus platform testing abilities combined into one:
-*dynamic logic test scenarios* which freely mix specific and random action
+*Dynamic logic test scenarios* which freely mix specific and random action
 sequences. For example:
 
 ``` {.haskell}

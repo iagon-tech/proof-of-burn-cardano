@@ -165,8 +165,9 @@ tests :: TestTree
 tests = testProperties "prop tests"
     [ ("burn validating in emulator is works",  prop_BurnValidatingInEmulatorIsWorks)
     , ("observable state don't break emulator", prop_GetObservableStateDon'tBreakEmulator)
-    , ("random actions is consistent",          prop_RandomActionsIsConsistent)
     , ("lock and then redeem",                  prop_LockAndRedeem)
+    , ("lock small values",                     prop_LockSmallValues)
+    , ("random actions is consistent",          prop_RandomActionsIsConsistent)
     ]
 
 
@@ -203,7 +204,7 @@ prop_LockAndRedeem = withMaxSuccess 10 $ forAllDL myTest mkPropForActions
     myTest = do
         action $ Lock (ContractInstanceId 1) w1 w2 20000
         anyBurnValidateActions_
-        (alreadyBurned :: Ada) <- (\ms -> fromMaybe 0 $ (ms ^. contractState . pobBurns . at w2)) <$> getModelState
+        (_alreadyBurned :: Ada) <- (\ms -> fromMaybe 0 $ (ms ^. contractState . pobBurns . at w2)) <$> getModelState
         action $ Redeem (ContractInstanceId 2) w2
         {-
         -- TODO
@@ -230,4 +231,13 @@ mkPropForActions = propRunActionsWithOptions
     initDistr :: InitialDistribution
     initDistr = Map.fromList [ (w, lovelaceValueOf 1_000_000_000)
                              | w <- wallets ]
+
+
+prop_LockSmallValues :: Property
+prop_LockSmallValues = withMaxSuccess 1 $ withDLTest anyActions_ mkPropForActions $
+    DLScript
+        [ Do $ Lock   (ContractInstanceId 1) w1 w2 (Lovelace {getLovelace = 1000})
+        , Do $ Lock   (ContractInstanceId 2) w1 w2 (Lovelace {getLovelace = 2000})
+        , Do $ Redeem (ContractInstanceId 3) w2
+        ]
 

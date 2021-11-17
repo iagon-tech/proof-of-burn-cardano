@@ -34,7 +34,6 @@ tests = testGroup "unit tests"
     , testRedeem
     , testLockAndRedeem1
     , testLockAndRedeem2
-    , testLockSmallValues
     , testLockAndRedeemOurselves
     , testLockTwiceAndRedeem
     , testBurnAndValidateBurn1
@@ -111,13 +110,10 @@ testLockAndRedeem1 = check "lock and redeem 1"
     )
     do
         pob1 <- activateContractWallet w1 endpoints
-        void $ Emulator.waitNSlots 1
         callEndpoint @"lock" pob1 (walletPubKeyHash w2, Ada.adaValueOf 50)
         void $ Emulator.waitNSlots 1
         pob2 <- activateContractWallet w2 endpoints
-        void $ Emulator.waitNSlots 1
         callEndpoint @"redeem" pob2 ()
-        void $ Emulator.waitNSlots 1
 
 
 -- | Test `lock` and `redeem` endpoints in pair.

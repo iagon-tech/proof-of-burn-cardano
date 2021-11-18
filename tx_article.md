@@ -25,7 +25,7 @@ First, we'll need:
 
 Then we need these additional cardano cli tools:
 
-1. [`cardano-cli`](https://github.com/input-output-hk/cardano-node/tree/master/cardano-cli): main tool to manaddraddresses
+1. [`cardano-cli`](https://github.com/input-output-hk/cardano-node/tree/master/cardano-cli): main tool to create and submit transactions
 2. [`cardano-address`](https://github.com/input-output-hk/cardano-addresses/tree/master/command-line): some additional address functionality
 3. [`bech32`](https://github.com/input-output-hk/bech32): for decoding
 
@@ -106,6 +106,8 @@ The biggest issue when creating transactions on the command line is getting the 
 We assume that a wallet has already been created/restored and that it has some funds. If you haven't added some,
 use the testnet faucet: https://testnets.cardano.org/en/testnets/cardano/tools/faucet/
 
+Also make sure `CARDANO_NODE_SOCKET_PATH` is set, which is needed by `cardano-cli`.
+
 ### Verifying JSON schema of datum/redeemer
 
 In your contract repo, start a repl, e.g. via `cabal repl --build-depends cardano-api --build-depends aeson`,
@@ -136,7 +138,7 @@ Prelude Cardano.Api Ledger.Scripts PlutusTx Aeson ProofOfBurn> Data.Aeson.encode
 
 Since we can't use the wallet REST API for all tasks yet, we need a lot of key/address files to be passed to `cardano-cli`.
 
-Firs we create the root private key, for which we need the recovery phrase:
+First we create the root private key, for which we need the recovery phrase:
 
 ```sh
 echo "<recovery-phrase>" |
@@ -163,11 +165,14 @@ cardano-cli address build \
 	--out-file "burn.addr"
 ```
 
-Then we create files for the datum and its hash:
+Then we create files for the datum/redeemer and its hash:
 
 ```sh
 echo "{\"constructor\":0,\"fields\":[{\"bytes\":\"74657374\"}]}" > datum.json
 cardano-cli transaction hash-script-data --script-data-file "datum.json" > datum.hash
+
+echo "{\"constructor\":0,\"fields\":[{\"constructor\":0,\"fields\":[]}]}" > redeemer.json
+cardano-cli transaction hash-script-data --script-data-file "redeemer.json" > redeemer.hash
 ```
 
 Now we need to perform a coin selection, which figures out which UTxOs can be used as inputs
@@ -285,8 +290,8 @@ This will return a json of the following type:
 }
 ```
 
-For simplicity, we'll assume that there is only one input, one change and one collaterall address (`cardano-cli` of course
-allows to specify multiple inputs).
+For simplicity, we'll assume that there is only one input and one change address (`cardano-cli` of course
+allows to specify multiple inputs). We don't need the collateral in this step, but in the next one (redeeming).
 
 We'll also assume there are two different derivation paths (e.g. for inputs and change) 
 `["1852H","1815H","0H","0","0"]` and `["1852H","1815H","0H","0","2"]`.
@@ -313,10 +318,8 @@ cardano-cli query protocol-parameters \
 
 cardano-cli transaction build \
 	--alonzo-era \
-	\ # format is "${tx_id}#${tx_index}"
+	\ # format is "${tx_id}#${tx_index}", [0] stands for the first input, use [1] for the second etc.
 	--tx-in "$(cat coin_selection.json | jq -e -r '.inputs | .[0].id')#$(cat coin_selection.json | jq -e -r '.inputs | .[0].index')" \
-	\ # same format
-	--tx-in-collateral "$(cat coin_selection.json | jq -e -r '.collateral | .[0].id')#$(cat coin_selection.json | jq -e -r '.collateral | .[0].index')" \
 	\ # amount needs to match what we fed into coin selection
 	--tx-out "$(cat burn.addr)+9000000" \
 	--tx-out-datum-hash=$(cat datum.hash)" \
@@ -355,3 +358,83 @@ curl -s -X GET -H "project_id: ${BLOCKFROST_API_TOKEN}" \
 ```
 
 This might take a while, so retry at will.
+
+### Creating redeem transaction
+
+This follows pretty much the same procedure as above except that we need the datum and the redeemer,
+which should already be in the files `datum.json` and `redeemer.json`.
+
+So we run the coin selection as above, create our signing keys and then create the raw transaction.
+The differences here are:
+
+1. we additionally need to pass a collateral (in case redeeming fails)... again, for simplicity we assume coin selection returned only one
+2. we also pass the plutus script itself for validation
+3. we pass in the mandatory redeemer (which is a dummy value in proof-of-burn though)
+4. we don't have `--tx-out`, because we're not submitting a value like when we locked
+
+```sh
+cardano-cli transaction build \
+	--alonzo-era \
+	\ # format is "${tx_id}#${tx_index}", [0] stands for the first input, use [1] for the second etc.
+	--tx-in "$(cat coin_selection.json | jq -e -r '.inputs | .[0].id')#$(cat coin_selection.json | jq -e -r '.inputs | .[0].index')" \
+	\ # same format
+	--tx-in-collateral "$(cat coin_selection.json | jq -e -r '.collateral | .[0].id')#$(cat coin_selection.json | jq -e -r '.collateral | .[0].index')" \
+	--tx-in-script-file result.plutus \
+	--tx-in-datum-file datum.json \
+	--tx-in-redeemer-file redeemer.json \
+	--change-address "$(cat coin_selection.json | jq -e -r '.change | .[0].address')" \
+	--testnet-magic=1097911063 \
+	--protocol-params-file "pparams.json" \
+	--witness-override 2 \
+	--required-signer="key0.skey" \
+	--required-signer="key1.skey" \
+	--out-file "tx.raw"
+```
+
+Signing and submitting follows the instructions from locking.
+
+You should check your balance before and after redeeming, via:
+
+```sh
+curl -s -X GET "http://localhost:8090/v2/wallets/<wallet-id>" | jq -r '.balance.available.quantity'
+```
+
+Whether redeeming works, obviously, depends on the contract, the datum and the redeemer. For the proof-of-burn contract,
+we have a dummy redeemer (which is irrelevant), but the datum needs to be your own wallet pubkey `sha3_256` encoded
+for the redeeming to work. The plutus script makes it obvious:
+
+```haskell
+validateSpend :: ValidatorType Burner
+validateSpend (MyDatum addrHash) _myRedeemerValue ScriptContext { scriptContextTxInfo = txinfo } =
+   addrHash `elem` allPubkeyHashes
+ where
+  requiredSigs :: [PubKeyHash]
+  requiredSigs = txInfoSignatories txinfo
+  allPubkeyHashes :: [BuiltinByteString]
+  allPubkeyHashes = fmap (sha3_256 . getPubKeyHash) requiredSigs
+```
+
+If you want to get your wallet pubkey `sha3_256` encoded, run:
+
+```sh
+curl -s -X GET "http://localhost:8090/v2/wallets/<wallet-id>/keys/utxo_external/0?hash=true" | jq -r . | bech32 | xxd -r -p | openssl dgst -r -sha3-256 | awk '{ print $1 }'
+```
+
+## Making things more ergonomic
+
+Since this is a lot of manual work, it might make sense to:
+
+1. create a `docker-compose.yml` to orchestrate the services like node, wallet etc.
+2. install all the required command line tools in a single docker image
+3. abstract over the transaction creation in a shell script
+
+We've done these steps for [proof-of-burn](https://github.com/iagon-tech/proof-of-burn-cardano).
+
+## Conclusion
+
+It can be quite challenging to manually create a transaction. Again, it's important to understand that
+only the plutus script that does transaction validation is used in this cli based approach, which
+limits the use cases somewhat.
+
+We've also been working on utilizing the PAB pre-release, which is a bit more difficult in initial setup,
+but seems to work on testnet pretty well.

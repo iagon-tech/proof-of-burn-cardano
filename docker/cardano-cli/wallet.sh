@@ -373,20 +373,6 @@ script_address() {
 		--out-file "$1"
 }
 
-# TODO: use wallet API
-# @FUNCTION: payment_address
-# @USAGE: <vkey-in-file> <payment-addr-out-file>
-# @DESCRIPTION:
-# Create a payment address to be used in a transaction.
-payment_address() {
-	[ "$#" -lt 2 ] && die "error: not enough arguments to payment_address (expexted 2)"
-
-	# shellcheck disable=SC2046
-	edo cardano-cli address build \
-		--payment-verification-key-file "$1" \
-		$([ "$NETWORK" = "testnet" ] && echo --testnet-magic="${TESTNET_MAGIC}" || echo "--mainnet") \
-		--out-file "$2"
-}
 
 # TODO: use wallet API
 # @FUNCTION: gen_protocol_parameters
@@ -657,8 +643,6 @@ send_funds() {
 
 	state_dir=$1
 	[ -e "${state_dir}" ] || die "state_dir doesn't exist!"
-
-	edo payment_address "${state_dir}/key.vkey" "${state_dir}/payment.addr"
 
 	json=$(coin_selection "$2" "$3" "$4")
 	[ -n "${json}" ] || die "Could not perform coin selection"

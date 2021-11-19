@@ -303,21 +303,21 @@ redeem = endpoint @"redeem" $ \() -> do
       logError @Prelude.String $ "No UTxO to redeem from"
       throwError (OtherError $ T.pack "No UTxO to redeem from")
     let redeemer = MyRedeemer ()
-    txs <- forM (Map.toList txInputs) $ \(k, v) -> do
+    vals <- forM (Map.toList txInputs) $ \(k, v) -> do
         let txInput = Map.singleton k v
             txConstraint = collectFromScript txInput redeemer <> Constraints.mustBeSignedBy pubk
-        try $ submitTxConstraintsSpending burnerTypedValidator txInput txConstraint
-    vals <- forM txs $ \case
-      Left e -> do
-        logError @Prelude.String $ "Error redeeming tx: " <> Prelude.show e
-        return Nothing
-      Right tx -> do
-          awaitTxConfirmed . getCardanoTxId $ tx
-          let val = foldOf (folded . to txOutValue) . getCardanoTxUnspentOutputsTx $ tx
-          logInfo @Prelude.String ("Tx redeemed with value " <> Prelude.show val)
-          return (Just val)
+        tx <- try $ submitTxConstraintsSpending burnerTypedValidator txInput txConstraint
+        case tx of
+          Left e -> do
+            logError @Prelude.String $ "Error redeeming tx: " <> Prelude.show e
+            return Nothing
+          Right tx -> do
+              awaitTxConfirmed . getCardanoTxId $ tx
+              let val = foldOf (folded . to txOutValue) . getCardanoTxUnspentOutputsTx $ tx
+              logInfo @Prelude.String ("Tx redeemed with value " <> Prelude.show val)
+              return (Just val)
     tellAction (Redeemed (Prelude.mconcat $ catMaybes vals) (getPubKeyHash pubk))
- where      
+ where
    filterUTxOs ::  Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx)
                 -> ((ChainIndexTxOut, ChainIndexTx) -> Bool)
                 -> Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx)

@@ -34,6 +34,7 @@ tests = testGroup "unit tests"
     , testRedeem
     , testLockAndRedeem1
     , testLockAndRedeem2
+    , testLockSmallValues
     , testLockAndRedeemOurselves
     , testLockTwiceAndRedeem
     , testBurnAndValidateBurn1
@@ -139,6 +140,31 @@ testLockAndRedeem2 = check "lock and redeem 2"
         --
         callEndpoint @"lock" pob2 (walletPubKeyHash w1, Ada.adaValueOf 50)
         void $ Emulator.waitNSlots 1
+        --
+        callEndpoint @"redeem" pob3 ()
+        void $ Emulator.waitNSlots 5
+
+
+-- | Test `lock`ing of small values
+--
+--   Lock some value and redeem it in other wallet.
+testLockSmallValues :: TestTree
+testLockSmallValues = check "lock small values"
+    (      walletFundsChange w1 (Ada.lovelaceValueOf  (-1000))
+      .&&. walletFundsChange w2 (Ada.lovelaceValueOf  (-1000))
+      .&&. walletFundsChange w3 (Ada.lovelaceValueOf    2000)
+    )
+    do
+        pob1 <- activateContractWallet w1 endpoints
+        pob2 <- activateContractWallet w2 endpoints
+        pob3 <- activateContractWallet w3 endpoints
+        void $ Emulator.waitNSlots 5
+        --
+        callEndpoint @"lock" pob1 (walletPubKeyHash w3, Ada.lovelaceValueOf 1000)
+        void $ Emulator.waitNSlots 5
+        --
+        callEndpoint @"lock" pob2 (walletPubKeyHash w3, Ada.lovelaceValueOf 1000)
+        void $ Emulator.waitNSlots 5
         --
         callEndpoint @"redeem" pob3 ()
         void $ Emulator.waitNSlots 5

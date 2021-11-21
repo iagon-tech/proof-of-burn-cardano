@@ -32,9 +32,9 @@
 --  In order to check that value was indeed burned, one needs to run a `burned` script with the same commitment value.
 module ProofOfBurn where
 
-import           Control.Monad             (void, when, forM)
+import           Control.Monad             (void, when, forM, forM_)
 import           Control.Applicative       (liftA3)
-import Control.Lens ( foldOf, folded, Field1(_1), Field4(_4) )
+import Control.Lens ( foldOf, folded, Field1(_1), Field4(_4), to )
 import           Data.Bits                 (xor)
 import           Data.Functor              (($>))
 import           Data.Char                 (ord, chr)
@@ -47,10 +47,12 @@ import qualified Data.List.NonEmpty        as NonEmpty(toList)
 import Plutus.Contract
     ( (>>),
       logInfo,
+      logError,
       endpoint,
       ownPubKeyHash,
       submitTxConstraints,
       submitTxConstraintsSpending,
+      awaitTxConfirmed,
       utxosAt,
       utxosTxOutTxAt,
       collectFromScript,
@@ -96,14 +98,15 @@ import Ledger.Tx
       ChainIndexTxOut(PublicKeyChainIndexTxOut, ScriptChainIndexTxOut,
                       _ciTxOutDatum),
       _ScriptChainIndexTxOut,
-      Address )
+      getCardanoTxId,
+      Address, getCardanoTxUnspentOutputsTx )
 import Plutus.V1.Ledger.Crypto
     ( PubKey, PubKeyHash(getPubKeyHash) )
 import Plutus.V1.Ledger.Credential ()
 import Plutus.V1.Ledger.Contexts
     ( ScriptContext(ScriptContext, scriptContextTxInfo),
       TxInfo(txInfoSignatories) )
-import           Plutus.V1.Ledger.Tx (Tx(..), TxOutRef, TxOutTx(..), txData, txOutDatum)
+import           Plutus.V1.Ledger.Tx (Tx(..), TxOutRef, TxOutTx(..), TxOut(..), txData, txOutDatum)
 import qualified Plutus.V1.Ledger.Scripts as Plutus
 import Playground.Contract
     ( mkKnownCurrencies, mkSchemaDefinitions, KnownCurrency )
@@ -117,7 +120,7 @@ import Codec.Serialise ( serialise )
 import           Cardano.Api.Shelley (PlutusScript (..), PlutusScriptV1)
 import Plutus.ChainIndex.Tx
     ( ChainIndexTx(ChainIndexTx, _citxData) )
-import           Cardano.Prelude ( Set, MonadError (throwError) )
+import           Cardano.Prelude ( Set, MonadError (throwError, catchError) )
 import qualified Data.Set as Set
 import Text.ParserCombinators.ReadPrec
 import GHC.Read
@@ -254,9 +257,12 @@ lock = endpoint @"lock" lock'
 
 lock' :: AsContractError e => (PubKeyHash, Value) -> Contract ContractState Schema e ()
 lock' (addr, lockedFunds) = do
+    pubk <- ownPubKeyHash
     let hash = sha3_256 $ getPubKeyHash addr
-    let tx = Constraints.mustPayToTheScript (MyDatum hash) lockedFunds
-    void $ submitTxConstraints burnerTypedValidator tx
+    let txConstraint = Constraints.mustPayToTheScript (MyDatum hash) lockedFunds <> Constraints.mustBeSignedBy pubk
+    tx <- submitTxConstraints burnerTypedValidator txConstraint
+    awaitTxConfirmed $ getCardanoTxId tx
+    logInfo @Prelude.String "Tx locked"
     tellAction (LockedValue lockedFunds hash)
 
 -- | The "burn" contract endpoint.
@@ -268,8 +274,10 @@ burn = endpoint @"burn" burn'
 burn' :: AsContractError e => (BuiltinByteString, Value) -> Contract ContractState Schema e ()
 burn' (aCommitment, burnedFunds) = do
     let hash = flipCommitment $ sha3_256 aCommitment
-    let tx = Constraints.mustPayToTheScript (MyDatum hash) burnedFunds
-    void $ submitTxConstraints burnerTypedValidator tx
+    let txConstraint = Constraints.mustPayToTheScript (MyDatum hash) burnedFunds
+    tx <- submitTxConstraints burnerTypedValidator txConstraint
+    awaitTxConfirmed $ getCardanoTxId tx
+    logInfo @Prelude.String "Tx burned"
     tellAction (BurnedValue burnedFunds hash)
 
 -- | Flip lowest bit in the commitment
@@ -290,13 +298,25 @@ redeem = endpoint @"redeem" $ \() -> do
     pubk <- ownPubKeyHash
     unspentOutputs' <- utxosTxOutTxAt contractAddress
     let relevantOutputs = filterUTxOs unspentOutputs' (filterByPubKey pubk)
-        funds = totalValue relevantOutputs
-        txInput = Map.map Prelude.fst $ relevantOutputs
-    when (Map.null relevantOutputs) $ throwError (OtherError $ T.pack "No UTxO to redeem from")
+        txInputs = Map.map Prelude.fst $ relevantOutputs
+    when (Map.null relevantOutputs) $ do
+      logError @Prelude.String $ "No UTxO to redeem from"
+      throwError (OtherError $ T.pack "No UTxO to redeem from")
     let redeemer = MyRedeemer ()
-        tx       = collectFromScript txInput redeemer
-    void $ submitTxConstraintsSpending burnerTypedValidator txInput tx
-    tellAction (Redeemed funds (getPubKeyHash pubk))
+    vals <- forM (Map.toList txInputs) $ \(k, v) -> do
+        let txInput = Map.singleton k v
+            txConstraint = collectFromScript txInput redeemer <> Constraints.mustBeSignedBy pubk
+        tx <- try $ submitTxConstraintsSpending burnerTypedValidator txInput txConstraint
+        case tx of
+          Left e -> do
+            logError @Prelude.String $ "Error redeeming tx: " <> Prelude.show e
+            return Nothing
+          Right tx -> do
+              awaitTxConfirmed . getCardanoTxId $ tx
+              let val = foldOf (folded . to txOutValue) . getCardanoTxUnspentOutputsTx $ tx
+              logInfo @Prelude.String ("Tx redeemed with value " <> Prelude.show val)
+              return (Just val)
+    tellAction (Redeemed (Prelude.mconcat $ catMaybes vals) (getPubKeyHash pubk))
  where
    filterUTxOs ::  Map.Map TxOutRef (ChainIndexTxOut, ChainIndexTx)
                 -> ((ChainIndexTxOut, ChainIndexTx) -> Bool)
@@ -351,6 +371,10 @@ getMyDatum (ScriptChainIndexTxOut { _ciTxOutDatum = Right (Datum datum) }, _) =
 -- | Script endpoints available for calling the contract.
 endpoints :: Contract ContractState Schema ContractError ()
 endpoints = contract
+
+
+try :: Contract w s e a -> Contract w s e (Either e a)
+try a = catchError (fmap Right $ a) (\e -> return (Left e))
 
 
 mkSchemaDefinitions ''Schema

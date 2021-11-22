@@ -1,4 +1,4 @@
-resolver: lts-18.13
+resolver: lts-18.16
 
 packages:
 - .
@@ -39,12 +39,13 @@ extra-deps:
 
 # https://github.com/input-output-hk/plutus/releases/tag/plutus-starter-devcontainer%2Fv1.0.13
 - git: https://github.com/input-output-hk/plutus-apps.git
-  commit: f9b7773403a60ed4b66434d9dcfbad5a032f2a26
+  commit: 404af7ac3e27ebcb218c05f79d9a70ca966407c9
   subdirs:
       - doc
       - freer-extras
       - playground-common
       - plutus-chain-index
+      - plutus-chain-index-core
       - plutus-contract
       - plutus-ledger
       - plutus-pab
@@ -67,9 +68,9 @@ extra-deps:
 - git: https://github.com/Quid2/flat.git
   commit: ee59880f47ab835dbd73bea0847dab7869fc20d8
 - git: https://github.com/input-output-hk/purescript-bridge.git
-  commit: 6a92d7853ea514be8b70bab5e72077bf5a510596
+  commit: 366fc70b341e2633f3ad0158a577d52e1cd2b138
 - git: https://github.com/input-output-hk/servant-purescript.git
-  commit: a0c7c7e37c95564061247461aef4be505a853538
+  commit: ebea59c7bdfc0338d83fca772b9a57e28560bcde
 - git: https://github.com/input-output-hk/cardano-crypto.git
   commit: 07397f0e50da97eaa0575d93bee7ac4b2b2576ec
 - git: https://github.com/input-output-hk/cardano-base
@@ -95,15 +96,21 @@ extra-deps:
   commit: d2f86caa085402a953920c6714a0de6a50b655ec
   subdirs:
     - core
+    - command-line
 
-- git: https://github.com/input-output-hk/cardano-wallet
-  commit: ae7569293e94241ef6829139ec02bd91abd069df
+- git: https://github.com/j-mueller/cardano-wallet
+  commit: 6be73ab852c0592713dfe78218856d4a8a0ee69e
   subdirs:
     - lib/text-class
     - lib/strict-non-empty-containers
     - lib/core
     - lib/test-utils
     - lib/numeric
+    - lib/launcher
+    - lib/core-integration
+    - lib/cli
+    - lib/shelley
+
 - git: https://github.com/input-output-hk/ouroboros-network
   commit: 1f4973f36f689d6da75b5d351fb124d66ef1057d
   subdirs:
@@ -147,8 +154,12 @@ extra-deps:
     - eras/byron/ledger/impl/test
     - eras/shelley/impl
     - eras/shelley-ma/impl
+    - eras/shelley/chain-and-ledger/executable-spec
+    - eras/shelley/test-suite
+    - shelley/chain-and-ledger/shelley-spec-ledger-test
     - libs/non-integral
     - libs/small-steps
+    - libs/cardano-ledger-pretty
     - semantics/small-steps-test
 - git: https://github.com/input-output-hk/cardano-node.git
   commit: b6ca519f97a0e795611a63174687e6bb70c9f752
